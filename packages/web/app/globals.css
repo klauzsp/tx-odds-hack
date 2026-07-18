@@ -141,14 +141,6 @@ h3,
   gap: 10px;
 }
 
-.networkBadge {
-  color: var(--gold);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .wallet-adapter-button.wallet-adapter-button-trigger {
   height: 42px;
   padding: 0 16px;
@@ -181,10 +173,6 @@ h3,
   .walletHeader {
     width: calc(100% - 32px);
     min-height: 72px;
-  }
-
-  .networkBadge {
-    display: none;
   }
 
   .wallet-adapter-button.wallet-adapter-button-trigger {

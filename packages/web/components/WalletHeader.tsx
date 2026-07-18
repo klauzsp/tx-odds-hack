@@ -14,7 +14,6 @@ export default function WalletHeader() {
         <span className="brandTournament">World Cup 26</span>
       </a>
       <div className="walletControls">
-        <span className="networkBadge">Solana devnet</span>
         <WalletMultiButton />
       </div>
     </header>
