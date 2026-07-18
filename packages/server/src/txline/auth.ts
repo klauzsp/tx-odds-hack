@@ -24,9 +24,11 @@ export function saveApiToken(apiToken: string) {
 }
 
 export function loadApiToken(): string {
+  const environmentToken = process.env.TXLINE_API_TOKEN?.trim();
+  if (environmentToken) return environmentToken;
   if (!fs.existsSync(CREDENTIALS_PATH)) {
     throw new Error(
-      "No TxLINE credentials found. Run `pnpm txline:setup` (needs a funded Solana wallet) first.",
+      "No TxLINE credentials found. Set TXLINE_API_TOKEN or run `pnpm txline:setup` first.",
     );
   }
   const { apiToken } = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, "utf8"));

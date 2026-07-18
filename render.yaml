@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: matchpot-server
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @matchpot/server start
+    healthCheckPath: /
+    envVars:
+      - key: TXLINE_NETWORK
+        value: mainnet
+      - key: TXLINE_SERVICE_LEVEL
+        value: "12"
+      - key: TXLINE_API_TOKEN
+        sync: false
+      - key: ESCROW_SETTLER_SECRET_KEY
+        sync: false

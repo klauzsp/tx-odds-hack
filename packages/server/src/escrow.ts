@@ -75,14 +75,20 @@ export async function verifyEscrowReady(state: SessionState): Promise<string | n
 }
 
 function loadSettlementKeypair(): Keypair {
-  const defaultPath = fileURLToPath(new URL("../../../_keys/devnet-test2.json", import.meta.url));
-  const keyPath = process.env.ESCROW_SETTLER_KEYPAIR
-    ? resolve(process.env.ESCROW_SETTLER_KEYPAIR)
-    : defaultPath;
-  const secret = JSON.parse(readFileSync(keyPath, "utf8")) as number[];
+  const environmentSecret = process.env.ESCROW_SETTLER_SECRET_KEY?.trim();
+  const secret = environmentSecret
+    ? (JSON.parse(environmentSecret) as number[])
+    : (JSON.parse(
+        readFileSync(
+          process.env.ESCROW_SETTLER_KEYPAIR
+            ? resolve(process.env.ESCROW_SETTLER_KEYPAIR)
+            : fileURLToPath(new URL("../../../_keys/devnet-test2.json", import.meta.url)),
+          "utf8",
+        ),
+      ) as number[]);
   const keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
   if (!keypair.publicKey.equals(SETTLEMENT_AUTHORITY))
-    throw new Error(`ESCROW_SETTLER_KEYPAIR does not match ${SETTLEMENT_AUTHORITY.toBase58()}`);
+    throw new Error(`Settlement signer does not match ${SETTLEMENT_AUTHORITY.toBase58()}`);
   return keypair;
 }
 

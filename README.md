@@ -31,6 +31,26 @@ programs/
 - **`server/src/txline/`** — real [TxLINE](https://txline-docs.txodds.com/documentation/quickstart) integration (see below).
 - **`server/src/session.ts`** — all game rules: join/rejoin (the connected wallet reclaims its seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
 
+## Deploying the demo
+
+Deploy the two runtime processes separately:
+
+1. Deploy the Socket.IO service from the repository root using `render.yaml`. Set
+   `TXLINE_API_TOKEN` to the `apiToken` in the ignored
+   `packages/server/.txline-credentials.json`, and set
+   `ESCROW_SETTLER_SECRET_KEY` to the complete JSON array in the ignored
+   `_keys/devnet-test2.json`. `SOLANA_RPC_URL` is optional; without it the server
+   uses Solana's public devnet endpoint.
+2. Import the same GitHub repository into Vercel, set its Root Directory to
+   `packages/web`, and add `NEXT_PUBLIC_SERVER_URL` with the HTTPS URL of the
+   deployed game server. `NEXT_PUBLIC_SOLANA_RPC_URL` is optional.
+3. Deploy the Vercel project. Pushes to `main` update production automatically;
+   other branches receive Vercel preview deployments.
+
+The free Render service sleeps after 15 minutes without inbound traffic, so open
+its health URL shortly before a demo. Use an always-on instance if cold starts are
+unacceptable. Never commit either secret value.
+
 ## SOL prize-pool escrow
 
 Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a unique session account from its compatibility seed and that `escrowId`, so sessions never share a pot. Historical sessions initialize that PDA and collect entries immediately. Upcoming sessions remain free until their entry window opens; the host's first deposit initializes the PDA and the second player then funds it. The server verifies both wallets against the on-chain account before kickoff.
