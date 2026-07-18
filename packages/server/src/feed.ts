@@ -3,6 +3,7 @@ import { TxLineFeed } from "./txline/feed";
 import { TxLineHistoricalFeed } from "./txline/historicalFeed";
 
 export interface FeedHandlers {
+  onReady(): void;
   onMinute(minute: number): void;
   onEvent(event: FeedEvent): void;
 }

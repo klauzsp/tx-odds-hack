@@ -127,6 +127,8 @@ export interface QuestionResultEntry {
   playerId: string;
   team: TeamCode;
   points: number;
+  /** TXODDS price captured when this prediction was submitted. */
+  oddsAtPick: number;
 }
 
 export interface QuestionResult {
@@ -166,6 +168,8 @@ export interface SessionState {
   noContest: boolean;
   /** Devnet transaction signature after the application settles the escrow. */
   payoutSignature: string | null;
+  /** Devnet transaction that locked the funded pool at kickoff. */
+  lockSignature: string | null;
   /** True once an expired session has been checked and any deposits returned. */
   refundComplete: boolean;
   /** Devnet refund transaction, or null when the expired session held no deposits. */

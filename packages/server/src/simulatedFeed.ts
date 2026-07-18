@@ -17,6 +17,7 @@ export class SimulatedFeed implements MatchFeed {
 
   start(handlers: FeedHandlers) {
     this.handlers = handlers;
+    this.handlers.onReady();
     this.advance();
     this.timer = setInterval(() => this.advance(), this.msPerMinute);
   }

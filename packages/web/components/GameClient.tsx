@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { GameFixture, QuestionType, SessionState, TeamCode } from "@matchpot/shared";
+import QRCode from "qrcode";
 import {
   DEMO_FIXTURES,
   ENTRY_LAMPORTS,
@@ -32,6 +34,7 @@ export default function GameClient() {
   const [fixtureId, setFixtureId] = useState(DEMO_FIXTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
+  const [depositSignature, setDepositSignature] = useState<string | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
   const [sessionAction, setSessionAction] = useState<"create" | "practice" | "join" | null>(null);
   const [startBusy, setStartBusy] = useState(false);
@@ -63,6 +66,11 @@ export default function GameClient() {
       socket.off("connect_error", onConnectError);
       socket.io.off("reconnect", onReconnect);
     };
+  }, []);
+
+  useEffect(() => {
+    const inviteCode = new URLSearchParams(window.location.search).get("join");
+    if (inviteCode) setCodeInput(inviteCode.trim().toUpperCase());
   }, []);
 
   useEffect(() => {
@@ -116,12 +124,13 @@ export default function GameClient() {
     setChainBusy(true);
     setError(null);
     try {
-      await ensureEscrowDeposit(
+      const signature = await ensureEscrowDeposit(
         connection,
         wallet,
         session.escrowId,
         id === session.hostId,
       );
+      if (signature) setDepositSignature(signature);
       setEscrow(await getEscrowSnapshot(connection, wallet, session.escrowId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The escrow transaction failed.");
@@ -214,7 +223,9 @@ export default function GameClient() {
     setState(null);
     setPlayerId(null);
     setEscrow(null);
+    setDepositSignature(null);
     setCodeInput("");
+    window.history.replaceState({}, "", window.location.pathname);
     setSessionAction(null);
     if (startTimeoutRef.current) window.clearTimeout(startTimeoutRef.current);
     startTimeoutRef.current = null;
@@ -256,6 +267,7 @@ export default function GameClient() {
         state={state}
         playerId={playerId}
         escrow={escrow}
+        depositSignature={depositSignature}
         chainBusy={chainBusy}
         startBusy={startBusy}
         onDeposit={() => fundPrizePool(state, playerId)}
@@ -475,6 +487,7 @@ function LobbyScreen(props: {
   state: SessionState;
   playerId: string;
   escrow: EscrowSnapshot | null;
+  depositSignature: string | null;
   chainBusy: boolean;
   startBusy: boolean;
   onDeposit: () => void;
@@ -484,6 +497,7 @@ function LobbyScreen(props: {
   const { state, playerId } = props;
   const now = useCurrentTime();
   const [copied, setCopied] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState("");
   const isHost = playerId === state.hostId;
   const me = state.players.find((player) => player.id === playerId);
   const deposited = Boolean(me && props.escrow?.depositors.includes(me.wallet));
@@ -500,6 +514,13 @@ function LobbyScreen(props: {
   const waitingForHostEscrow = entryOpen && !isHost && !props.escrow;
   const ready = state.players.length >= 2 && allDeposited && !waitingForKickoff;
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("join", state.code);
+    setInviteUrl(url.toString());
+  }, [state.code]);
+
   return (
     <main className="shell">
       <div className="card lobby">
@@ -512,22 +533,27 @@ function LobbyScreen(props: {
         ) : (
           <>
             <p className="lobbyLabel">Session code</p>
-            <div className="sessionCodeRow">
-              <p className="sessionCode">{state.code}</p>
-              <button
-                className="copyCodeBtn"
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(state.code).then(() => {
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1_500);
-                  });
-                }}
-              >
-                {copied ? "Copied ✓" : "Copy"}
-              </button>
+            <div className="inviteBlock">
+              <InviteQr value={inviteUrl} />
+              <div className="inviteDetails">
+                <div className="sessionCodeRow">
+                  <p className="sessionCode">{state.code}</p>
+                  <button
+                    className="copyCodeBtn"
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard.writeText(inviteUrl || state.code).then(() => {
+                        setCopied(true);
+                        window.setTimeout(() => setCopied(false), 1_500);
+                      });
+                    }}
+                  >
+                    {copied ? "Copied ✓" : "Copy invite"}
+                  </button>
+                </div>
+                <p className="muted small">Scan or share the link to prefill this code</p>
+              </div>
             </div>
-            <p className="muted">Share this code with your friend</p>
           </>
         )}
 
@@ -569,21 +595,39 @@ function LobbyScreen(props: {
         </p>
 
         {state.mode === "competitive" && (
-          <div className="escrowPanel">
-            <div>
-              <span className="escrowLabel">Prize pool · Solana devnet</span>
-              <strong>
-                {((props.escrow?.prizePoolLamports ?? 0) / 1_000_000_000).toFixed(2)} SOL
-              </strong>
+          <>
+            <div className="escrowPanel">
+              <div>
+                <span className="escrowLabel">Prize pool · Solana devnet</span>
+                <strong>
+                  {((props.escrow?.prizePoolLamports ?? 0) / 1_000_000_000).toFixed(2)} SOL
+                </strong>
+              </div>
+              <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
+                {deposited
+                  ? "Your entry is funded ✓"
+                  : entryOpen
+                    ? "Entry not funded"
+                    : `Deposits open ${formatTimeUntil(entryOpensAt, now)}`}
+              </span>
             </div>
-            <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
-              {deposited
-                ? "Your entry is funded ✓"
-                : entryOpen
-                  ? "Entry not funded"
-                  : `Deposits open ${formatTimeUntil(entryOpensAt, now)}`}
-            </span>
-          </div>
+            {(props.depositSignature || props.escrow) && (
+              <div className="chainLinks">
+                {props.depositSignature && (
+                  <ExplorerLink signature={props.depositSignature}>Your deposit ↗</ExplorerLink>
+                )}
+                {props.escrow && (
+                  <a
+                    href={solanaAccountUrl(props.escrow.address)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View prize pool ↗
+                  </a>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {state.mode === "competitive" && !deposited && (
@@ -710,6 +754,65 @@ function MatchScreen(props: {
   const team = (code: TeamCode) =>
     code === "HOME" ? state.fixture.home : state.fixture.away;
   const notifiedQuestion = useRef<string | null>(null);
+  const latestGoal = [...state.feed].reverse().find((event) => event.kind === "GOAL");
+  const latestGoalKey =
+    latestGoal?.kind === "GOAL"
+      ? `${latestGoal.minute}-${latestGoal.team}-${latestGoal.scorer}`
+      : null;
+  const seenGoal = useRef(latestGoalKey);
+  const [goalFlash, setGoalFlash] = useState<string | null>(null);
+  const previousOdds = useRef({ ...state.odds });
+  const [oddsMovement, setOddsMovement] = useState<Record<TeamCode, -1 | 0 | 1>>({
+    HOME: 0,
+    AWAY: 0,
+  });
+  const previousScores = useRef(
+    Object.fromEntries(state.players.map((player) => [player.id, player.score])),
+  );
+  const [scoreBumps, setScoreBumps] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!latestGoal || latestGoal.kind !== "GOAL" || !latestGoalKey) return;
+    if (seenGoal.current === latestGoalKey) return;
+    seenGoal.current = latestGoalKey;
+    setGoalFlash(`${team(latestGoal.team).flag} GOAL! ${team(latestGoal.team).name}`);
+    const timer = window.setTimeout(() => setGoalFlash(null), 1_800);
+    return () => window.clearTimeout(timer);
+  }, [latestGoalKey]);
+
+  useEffect(() => {
+    const movement = Object.fromEntries(
+      TEAM_CODES.map((code) => [
+        code,
+        state.odds[code] === previousOdds.current[code]
+          ? 0
+          : state.odds[code] > previousOdds.current[code]
+            ? 1
+            : -1,
+      ]),
+    ) as Record<TeamCode, -1 | 0 | 1>;
+    previousOdds.current = { ...state.odds };
+    setOddsMovement(movement);
+    if (!TEAM_CODES.some((code) => movement[code] !== 0)) return;
+    const timer = window.setTimeout(
+      () => setOddsMovement({ HOME: 0, AWAY: 0 }),
+      1_800,
+    );
+    return () => window.clearTimeout(timer);
+  }, [state.odds.AWAY, state.odds.HOME]);
+
+  useEffect(() => {
+    const changed = state.players
+      .filter((player) => player.score > (previousScores.current[player.id] ?? 0))
+      .map((player) => player.id);
+    previousScores.current = Object.fromEntries(
+      state.players.map((player) => [player.id, player.score]),
+    );
+    if (changed.length === 0) return;
+    setScoreBumps(new Set(changed));
+    const timer = window.setTimeout(() => setScoreBumps(new Set()), 900);
+    return () => window.clearTimeout(timer);
+  }, [state.players]);
 
   useEffect(() => {
     if (!question || notifiedQuestion.current === question.id) return;
@@ -736,6 +839,7 @@ function MatchScreen(props: {
 
   return (
     <main className="shell wide">
+      {goalFlash && <div className="goalFlash">{goalFlash}</div>}
       <header className="scoreboard">
         <div className="teamSide">
           <span className="teamFlag">{state.fixture.home.flag}</span>
@@ -789,8 +893,13 @@ function MatchScreen(props: {
                       <span className="answerName">{team(code).name}</span>
                       <span className="answerOdds">
                         {question.type === "NEXT_GOAL"
-                          ? `pays ${Math.round(100 * state.odds[code])} pts`
+                          ? `${state.odds[code].toFixed(2)}× · pays ${Math.round(100 * state.odds[code])} pts`
                           : "pays 150 pts"}
+                        {question.type === "NEXT_GOAL" && oddsMovement[code] !== 0 && (
+                          <span className={oddsMovement[code] > 0 ? "oddsUp" : "oddsDown"}>
+                            {oddsMovement[code] > 0 ? " ↑" : " ↓"}
+                          </span>
+                        )}
                       </span>
                       {picked && <span className="lockedTag">locked in</span>}
                     </button>
@@ -846,7 +955,11 @@ function MatchScreen(props: {
                             {playerName(entry.playerId)} picked {team(entry.team).name}
                           </span>
                           <span className={entry.points > 0 ? "gain" : "muted"}>
-                            {entry.points > 0 ? `+${entry.points} pts` : "+0"}
+                            {entry.points > 0
+                              ? state.lastResult?.type === "NEXT_GOAL"
+                                ? `${entry.oddsAtPick.toFixed(2)}× × 100 = +${entry.points} pts`
+                                : `flat pick = +${entry.points} pts`
+                              : "+0 pts"}
                           </span>
                         </li>
                       ))}
@@ -863,13 +976,33 @@ function MatchScreen(props: {
         </section>
 
         <aside className="sideCol">
+          <div className="card oddsCard">
+            <div className="oddsTitleRow">
+              <p className="cardTitle">Next goal odds</p>
+              <span className="liveBadge"><i /> TXODDS LIVE</span>
+            </div>
+            <div className="oddsTicker">
+              {TEAM_CODES.map((code) => (
+                <div key={code}>
+                  <span>{team(code).flag} {team(code).name}</span>
+                  <strong className={oddsMovement[code] > 0 ? "oddsUp" : oddsMovement[code] < 0 ? "oddsDown" : ""}>
+                    {state.odds[code].toFixed(2)}× {oddsMovement[code] > 0 ? "↑" : oddsMovement[code] < 0 ? "↓" : ""}
+                  </strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="card">
             <p className="cardTitle">Scores</p>
             <ul className="scoreList">
               {[...state.players]
                 .sort((a, b) => b.score - a.score)
                 .map((p) => (
-                  <li key={p.id} className={p.id === playerId ? "me" : ""}>
+                  <li
+                    key={p.id}
+                    className={`${p.id === playerId ? "me" : ""} ${scoreBumps.has(p.id) ? "scoreBump" : ""}`}
+                  >
                     <span>
                       {p.name}
                       {p.id === playerId && " (you)"}
@@ -937,9 +1070,14 @@ function FinalCard({
   const settled = state.results.filter((r) => r.team !== null);
   const correctCount = (pid: string) =>
     settled.filter((r) => r.entries.some((e) => e.playerId === pid && e.points > 0)).length;
+  const winningMoments = settled.filter((result) =>
+    result.entries.some((entry) => winners.includes(entry.playerId) && entry.points > 0),
+  );
+  const poolSol = formatSol(ENTRY_LAMPORTS * state.players.length);
 
   return (
     <div className="card finalCard">
+      {!noContest && <Confetti />}
       <p className="trophy">{practice ? "🎮" : "🏆"}</p>
       <h2>
         {practice && noContest
@@ -980,28 +1118,133 @@ function FinalCard({
             </li>
           ))}
       </ul>
+
+      {winningMoments.length > 0 && (
+        <div className="winningMoments">
+          <p className="cardTitle">Winning predictions</p>
+          {winningMoments.slice(-3).map((result) => {
+            const winningEntry = result.entries.find(
+              (entry) => winners.includes(entry.playerId) && entry.points > 0,
+            );
+            if (!winningEntry) return null;
+            return (
+              <div key={result.questionId}>
+                <span>{result.headline}</span>
+                <strong>
+                  {result.type === "NEXT_GOAL"
+                    ? `${winningEntry.oddsAtPick.toFixed(2)}× → +${winningEntry.points}`
+                    : `+${winningEntry.points} pts`}
+                </strong>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {practice ? (
         <p className="muted small">Free practice game · no SOL prize</p>
-      ) : state.payoutSignature ? (
-        <a
-          className="explorerLink"
-          href={`https://explorer.solana.com/tx/${state.payoutSignature}?cluster=devnet`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {noContest ? "Entries refunded on Solana ↗" : "Prize paid on Solana ↗"}
-        </a>
       ) : (
-        <p className="muted small">
-          {noContest ? "Application refund in progress" : "Application payout in progress"}
-          {escrow
-            ? ` · ${(escrow.prizePoolLamports / 1_000_000_000).toFixed(2)} SOL`
-            : "…"}
-        </p>
+        <div className={`settlementReceipt ${state.payoutSignature ? "settled" : "settling"}`}>
+          <div className="receiptHeader">
+            <span>Solana settlement receipt</span>
+            <strong>{state.payoutSignature ? "✓ SETTLED" : "● SETTLING"}</strong>
+          </div>
+          <div className="receiptRow">
+            <span>Fixture</span>
+            <strong>{state.fixture.home.name} vs {state.fixture.away.name}</strong>
+          </div>
+          <div className="receiptRow">
+            <span>{noContest ? "Refunded to" : tie ? "Split between" : "Winner"}</span>
+            <strong>{noContest ? "All players" : winnerNames.join(" & ")}</strong>
+          </div>
+          <div className="receiptRow">
+            <span>{noContest ? "Total refunded" : "Prize pool"}</span>
+            <strong>{poolSol} SOL</strong>
+          </div>
+          <div className="receiptRow">
+            <span>Settlement</span>
+            <strong>Automatic · MatchPot application</strong>
+          </div>
+          {state.payoutSignature ? (
+            <ExplorerLink signature={state.payoutSignature}>
+              {noContest ? "View automatic refund ↗" : "View automatic payout ↗"}
+            </ExplorerLink>
+          ) : (
+            <p className="receiptPending">
+              <span className="loadingSpinner" aria-hidden="true" />
+              {noContest ? "Returning every entry…" : "Paying the winner automatically…"}
+              {escrow ? ` ${formatSol(escrow.prizePoolLamports)} SOL locked.` : ""}
+            </p>
+          )}
+        </div>
       )}
       <button className="btn primary playAgainBtn" onClick={onPlayAgain}>
         Play another match
       </button>
     </div>
   );
+}
+
+function InviteQr({ value }: { value: string }) {
+  const [image, setImage] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!value) return;
+    void QRCode.toDataURL(value, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 160,
+      color: { dark: "#07140fff", light: "#ffffffff" },
+    })
+      .then((url) => active && setImage(url))
+      .catch(() => active && setImage(""));
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
+  return image ? (
+    <img className="inviteQr" src={image} alt="Scan to join this MatchPot session" />
+  ) : (
+    <div className="inviteQr qrLoading" aria-label="Preparing invite QR code" />
+  );
+}
+
+function ExplorerLink({ signature, children }: { signature: string; children: ReactNode }) {
+  return (
+    <a
+      className="explorerLink"
+      href={solanaTransactionUrl(signature)}
+      target="_blank"
+      rel="noreferrer"
+    >
+      {children}
+    </a>
+  );
+}
+
+function Confetti() {
+  return (
+    <div className="confetti" aria-hidden="true">
+      {Array.from({ length: 24 }, (_, index) => (
+        <i
+          key={index}
+          style={{ "--confetti-index": index } as CSSProperties}
+        />
+      ))}
+    </div>
+  );
+}
+
+function solanaTransactionUrl(signature: string): string {
+  return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet`;
+}
+
+function solanaAccountUrl(address: string): string {
+  return `https://explorer.solana.com/address/${encodeURIComponent(address)}?cluster=devnet`;
+}
+
+function formatSol(lamports: number): string {
+  return (lamports / 1_000_000_000).toFixed(2);
 }

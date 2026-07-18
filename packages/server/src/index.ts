@@ -116,7 +116,8 @@ io.on("connection", (socket) => {
       return cb({ ok: false, error: escrowError });
     }
     try {
-      await lockEscrowForKickoff(session.toState());
+      const signature = await lockEscrowForKickoff(session.toState());
+      session.recordLock(signature);
     } catch (error) {
       console.error(`Could not lock escrow for ${session.code}:`, error);
       session.abortStart();

@@ -112,6 +112,7 @@ export class Session {
   private winners: string[] | null = null;
   private noContest = false;
   private payoutSignature: string | null = null;
+  private lockSignature: string | null = null;
   private refundComplete = false;
   private refundSignature: string | null = null;
   private matchFeed: MatchFeed | null = null;
@@ -191,20 +192,25 @@ export class Session {
       return { ok: false, error: err instanceof Error ? err.message : "Feed unavailable." };
     }
 
+    this.matchFeed = feed;
+    this.matchFeed.start({
+      onReady: () => this.handleFeedReady(),
+      onMinute: (minute) => this.handleMinute(minute),
+      onEvent: (event) => this.handleFeedEvent(event),
+    });
+    return { ok: true };
+  }
+
+  private handleFeedReady() {
+    if (!this.starting || this.status !== "lobby") return;
     this.status = "live";
     this.starting = false;
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
     this.nextOpenMinute = FIRST_QUESTION_DELAY();
-    this.matchFeed = feed;
-    // Move every lobby client to the match screen immediately. Historical
-    // TxLINE preparation can take a few seconds before its first feed event.
+    // Historical feeds call this only after their TXODDS data is prepared, so
+    // clients keep showing the kickoff loader instead of a frozen 0' clock.
     this.notify(this);
-    this.matchFeed.start({
-      onMinute: (minute) => this.handleMinute(minute),
-      onEvent: (event) => this.handleFeedEvent(event),
-    });
-    return { ok: true };
   }
 
   startReadinessError(playerId: string): string | null {
@@ -266,6 +272,12 @@ export class Session {
   recordPayout(signature: string) {
     if (this.status !== "finished" || this.payoutSignature) return;
     this.payoutSignature = signature;
+    this.notify(this);
+  }
+
+  recordLock(signature: string) {
+    if (!this.starting || this.lockSignature) return;
+    this.lockSignature = signature;
     this.notify(this);
   }
 
@@ -401,7 +413,7 @@ export class Session {
             ? Math.round(BASE_POINTS * prediction.odds)
             : FLAT_POINTS;
         if (points > 0) this.players.get(playerId)!.score += points;
-        return { playerId, team: prediction.team, points };
+        return { playerId, team: prediction.team, points, oddsAtPick: prediction.odds };
       });
       this.results.push({
         questionId: q.id,
@@ -488,6 +500,7 @@ export class Session {
       winners: this.winners,
       noContest: this.noContest,
       payoutSignature: this.payoutSignature,
+      lockSignature: this.lockSignature,
       refundComplete: this.refundComplete,
       refundSignature: this.refundSignature,
     };

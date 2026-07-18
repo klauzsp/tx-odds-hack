@@ -43,6 +43,7 @@ export class TxLineFeed implements MatchFeed {
 
   start(handlers: FeedHandlers) {
     this.handlers = handlers;
+    this.handlers.onReady();
     this.run().catch((err) => console.error("[txline] feed failed to start:", err));
   }
 
