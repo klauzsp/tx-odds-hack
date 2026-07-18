@@ -9,6 +9,9 @@ export const TEAMS: Record<TeamCode, { code: TeamCode; name: string; flag: strin
 
 export const TEAM_CODES: TeamCode[] = ["ENG", "MEX"];
 
+/** 0.1 SOL per player on devnet. The escrow stores this value on initialization. */
+export const ENTRY_LAMPORTS = 100_000_000;
+
 /** Decimal odds for "which team scores the next goal". */
 export type NextGoalOdds = Record<TeamCode, number>;
 
@@ -29,6 +32,8 @@ export type SessionStatus = "lobby" | "live" | "finished";
 export interface PlayerPublic {
   id: string;
   name: string;
+  /** Base58 Solana address that owns this seat and can receive a payout. */
+  wallet: string;
   score: number;
   connected: boolean;
 }
@@ -72,6 +77,8 @@ export interface QuestionResult {
 
 export interface SessionState {
   code: string;
+  /** Unique 32-byte hex identifier used as the escrow PDA seed. */
+  escrowId: string;
   status: SessionStatus;
   hostId: string;
   players: PlayerPublic[];
@@ -100,8 +107,14 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  "session:create": (payload: { name: string }, cb: (ack: JoinAck) => void) => void;
-  "session:join": (payload: { code: string; name: string }, cb: (ack: JoinAck) => void) => void;
+  "session:create": (
+    payload: { name: string; wallet: string },
+    cb: (ack: JoinAck) => void,
+  ) => void;
+  "session:join": (
+    payload: { code: string; name: string; wallet: string },
+    cb: (ack: JoinAck) => void,
+  ) => void;
   "match:start": (cb: (ack: Ack) => void) => void;
   "prediction:submit": (
     payload: { questionId: string; team: TeamCode },

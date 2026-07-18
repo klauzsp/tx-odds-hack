@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
-import { TEAMS, TEAM_CODES } from "@nextgoal/shared";
+import { ENTRY_LAMPORTS, TEAMS, TEAM_CODES } from "@nextgoal/shared";
+import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
+import {
+  ensureEscrowDeposit,
+  getEscrowSnapshot,
+  settleEscrow,
+  type EscrowSnapshot,
+} from "../lib/escrow";
 
 const QUESTION_EMOJI: Record<QuestionType, string> = {
   NEXT_GOAL: "⚽",
@@ -12,12 +19,17 @@ const QUESTION_EMOJI: Record<QuestionType, string> = {
 import { getSocket } from "../lib/socket";
 
 export default function GameClient() {
+  const { connection } = useConnection();
+  const wallet = useAnchorWallet();
   const [state, setState] = useState<SessionState | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [codeInput, setCodeInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const joinedRef = useRef<{ code: string; name: string } | null>(null);
+  const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
+  const [chainBusy, setChainBusy] = useState(false);
+  const [payoutSignature, setPayoutSignature] = useState<string | null>(null);
+  const joinedRef = useRef<{ code: string; name: string; wallet: string } | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
@@ -40,24 +52,71 @@ export default function GameClient() {
     };
   }, []);
 
-  const create = () => {
+  useEffect(() => {
+    if (!state?.escrowId || !wallet) return;
+    let active = true;
+    const refresh = () => {
+      getEscrowSnapshot(connection, wallet, state.escrowId)
+        .then((snapshot) => active && setEscrow(snapshot))
+        .catch(() => active && setEscrow(null));
+    };
+    refresh();
+    // A deposit does not pass through Socket.IO, so lobby clients poll the PDA
+    // briefly to enable kickoff as soon as another wallet funds its entry.
+    const timer = state.status === "lobby" ? window.setInterval(refresh, 2_500) : null;
+    return () => {
+      active = false;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [connection, state?.escrowId, state?.status, wallet]);
+
+  const fundPrizePool = async (session: SessionState, id: string) => {
+    if (!wallet) return setError("Connect your Phantom wallet first.");
+    setChainBusy(true);
     setError(null);
-    getSocket().emit("session:create", { name }, (ack) => {
+    try {
+      await ensureEscrowDeposit(
+        connection,
+        wallet,
+        session.escrowId,
+        id === session.hostId,
+      );
+      setEscrow(await getEscrowSnapshot(connection, wallet, session.escrowId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The escrow transaction failed.");
+    } finally {
+      setChainBusy(false);
+    }
+  };
+
+  const create = () => {
+    if (!wallet) return setError("Connect your Phantom wallet first.");
+    setError(null);
+    const walletAddress = wallet.publicKey.toBase58();
+    getSocket().emit("session:create", { name, wallet: walletAddress }, (ack) => {
       if (!ack.ok) return setError(ack.error);
-      joinedRef.current = { code: ack.code, name };
+      joinedRef.current = { code: ack.code, name, wallet: walletAddress };
       setPlayerId(ack.playerId);
       setState(ack.state);
+      void fundPrizePool(ack.state, ack.playerId);
     });
   };
 
   const join = () => {
+    if (!wallet) return setError("Connect your Phantom wallet first.");
     setError(null);
-    getSocket().emit("session:join", { code: codeInput.trim().toUpperCase(), name }, (ack) => {
-      if (!ack.ok) return setError(ack.error);
-      joinedRef.current = { code: ack.code, name };
-      setPlayerId(ack.playerId);
-      setState(ack.state);
-    });
+    const walletAddress = wallet.publicKey.toBase58();
+    getSocket().emit(
+      "session:join",
+      { code: codeInput.trim().toUpperCase(), name, wallet: walletAddress },
+      (ack) => {
+        if (!ack.ok) return setError(ack.error);
+        joinedRef.current = { code: ack.code, name, wallet: walletAddress };
+        setPlayerId(ack.playerId);
+        setState(ack.state);
+        void fundPrizePool(ack.state, ack.playerId);
+      },
+    );
   };
 
   const startMatch = () => {
@@ -75,6 +134,32 @@ export default function GameClient() {
     });
   };
 
+  const payout = async () => {
+    if (!state || !wallet || !state.winners?.length) return;
+    const winnerWallets = state.winners.map((winnerId) => {
+      const winner = state.players.find((player) => player.id === winnerId);
+      if (!winner) throw new Error("Winner wallet is missing from the session.");
+      return winner.wallet;
+    });
+
+    setChainBusy(true);
+    setError(null);
+    try {
+      const signature = await settleEscrow(
+        connection,
+        wallet,
+        state.escrowId,
+        winnerWallets,
+      );
+      setPayoutSignature(signature);
+      setEscrow(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The payout transaction failed.");
+    } finally {
+      setChainBusy(false);
+    }
+  };
+
   if (!state || !playerId) {
     return (
       <HomeScreen
@@ -84,16 +169,39 @@ export default function GameClient() {
         setCodeInput={setCodeInput}
         onCreate={create}
         onJoin={join}
+        walletConnected={Boolean(wallet)}
+        chainBusy={chainBusy}
         error={error}
       />
     );
   }
 
   if (state.status === "lobby") {
-    return <LobbyScreen state={state} playerId={playerId} onStart={startMatch} error={error} />;
+    return (
+      <LobbyScreen
+        state={state}
+        playerId={playerId}
+        escrow={escrow}
+        chainBusy={chainBusy}
+        onDeposit={() => fundPrizePool(state, playerId)}
+        onStart={startMatch}
+        error={error}
+      />
+    );
   }
 
-  return <MatchScreen state={state} playerId={playerId} onPredict={predict} error={error} />;
+  return (
+    <MatchScreen
+      state={state}
+      playerId={playerId}
+      escrow={escrow}
+      chainBusy={chainBusy}
+      payoutSignature={payoutSignature}
+      onPayout={payout}
+      onPredict={predict}
+      error={error}
+    />
+  );
 }
 
 function HomeScreen(props: {
@@ -103,6 +211,8 @@ function HomeScreen(props: {
   setCodeInput: (v: string) => void;
   onCreate: () => void;
   onJoin: () => void;
+  walletConnected: boolean;
+  chainBusy: boolean;
   error: string | null;
 }) {
   return (
@@ -129,8 +239,12 @@ function HomeScreen(props: {
           />
         </label>
 
-        <button className="btn primary" onClick={props.onCreate} disabled={!props.name.trim()}>
-          Create a session
+        <button
+          className="btn primary"
+          onClick={props.onCreate}
+          disabled={!props.name.trim() || !props.walletConnected || props.chainBusy}
+        >
+          {props.walletConnected ? "Create a session · 0.1 SOL" : "Connect wallet to play"}
         </button>
 
         <div className="divider">or join a friend</div>
@@ -146,7 +260,12 @@ function HomeScreen(props: {
           <button
             className="btn"
             onClick={props.onJoin}
-            disabled={!props.name.trim() || props.codeInput.trim().length < 4}
+            disabled={
+              !props.name.trim() ||
+              props.codeInput.trim().length < 4 ||
+              !props.walletConnected ||
+              props.chainBusy
+            }
           >
             Join
           </button>
@@ -161,12 +280,20 @@ function HomeScreen(props: {
 function LobbyScreen(props: {
   state: SessionState;
   playerId: string;
+  escrow: EscrowSnapshot | null;
+  chainBusy: boolean;
+  onDeposit: () => void;
   onStart: () => void;
   error: string | null;
 }) {
   const { state, playerId } = props;
   const isHost = playerId === state.hostId;
-  const ready = state.players.length >= 2;
+  const me = state.players.find((player) => player.id === playerId);
+  const deposited = Boolean(me && props.escrow?.depositors.includes(me.wallet));
+  const allDeposited = state.players.every((player) =>
+    props.escrow?.depositors.includes(player.wallet),
+  );
+  const ready = state.players.length >= 2 && allDeposited;
 
   return (
     <main className="shell">
@@ -199,9 +326,33 @@ function LobbyScreen(props: {
           <span>Mexico {TEAMS.MEX.flag}</span>
         </div>
 
+        <div className="escrowPanel">
+          <div>
+            <span className="escrowLabel">Prize pool · Solana devnet</span>
+            <strong>
+              {((props.escrow?.prizePoolLamports ?? 0) / 1_000_000_000).toFixed(2)} SOL
+            </strong>
+          </div>
+          <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
+            {deposited ? "Your entry is funded ✓" : "Entry not funded"}
+          </span>
+        </div>
+
+        {!deposited && (
+          <button className="btn" onClick={props.onDeposit} disabled={props.chainBusy}>
+            {props.chainBusy
+              ? "Confirming on Solana…"
+              : `Deposit ${(ENTRY_LAMPORTS / 1_000_000_000).toFixed(1)} SOL`}
+          </button>
+        )}
+
         {isHost ? (
           <button className="btn primary" onClick={props.onStart} disabled={!ready}>
-            {ready ? "Kick off ⚽" : "Waiting for a second player…"}
+            {ready
+              ? "Kick off ⚽"
+              : state.players.length < 2
+                ? "Waiting for a second player…"
+                : "Waiting for both deposits…"}
           </button>
         ) : (
           <p className="muted">Waiting for the host to kick off…</p>
@@ -216,6 +367,10 @@ function LobbyScreen(props: {
 function MatchScreen(props: {
   state: SessionState;
   playerId: string;
+  escrow: EscrowSnapshot | null;
+  chainBusy: boolean;
+  payoutSignature: string | null;
+  onPayout: () => void;
   onPredict: (team: TeamCode) => void;
   error: string | null;
 }) {
@@ -250,7 +405,14 @@ function MatchScreen(props: {
       <div className="columns">
         <section className="mainCol">
           {state.status === "finished" ? (
-            <FinalCard state={state} playerId={playerId} />
+            <FinalCard
+              state={state}
+              playerId={playerId}
+              escrow={props.escrow}
+              chainBusy={props.chainBusy}
+              payoutSignature={props.payoutSignature}
+              onPayout={props.onPayout}
+            />
           ) : question ? (
             <div className="card questionCard">
               <div className="questionHeader">
@@ -396,13 +558,28 @@ function MatchScreen(props: {
   );
 }
 
-function FinalCard({ state, playerId }: { state: SessionState; playerId: string }) {
+function FinalCard({
+  state,
+  playerId,
+  escrow,
+  chainBusy,
+  payoutSignature,
+  onPayout,
+}: {
+  state: SessionState;
+  playerId: string;
+  escrow: EscrowSnapshot | null;
+  chainBusy: boolean;
+  payoutSignature: string | null;
+  onPayout: () => void;
+}) {
   const winners = state.winners ?? [];
   const winnerNames = state.players
     .filter((p) => winners.includes(p.id))
     .map((p) => p.name);
   const iWon = winners.includes(playerId);
   const tie = winners.length > 1;
+  const isHost = playerId === state.hostId;
   const settled = state.results.filter((r) => r.team !== null);
   const correctCount = (pid: string) =>
     settled.filter((r) => r.entries.some((e) => e.playerId === pid && e.points > 0)).length;
@@ -433,7 +610,26 @@ function FinalCard({ state, playerId }: { state: SessionState; playerId: string 
             </li>
           ))}
       </ul>
-      <p className="muted small">SOL payout via Anchor escrow — coming next build.</p>
+      {payoutSignature ? (
+        <a
+          className="explorerLink"
+          href={`https://explorer.solana.com/tx/${payoutSignature}?cluster=devnet`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Prize paid on Solana ↗
+        </a>
+      ) : isHost && escrow ? (
+        <button className="btn primary" onClick={onPayout} disabled={chainBusy}>
+          {chainBusy
+            ? "Confirming payout…"
+            : `Pay winner${tie ? "s" : ""} ${(escrow.prizePoolLamports / 1_000_000_000).toFixed(2)} SOL`}
+        </button>
+      ) : (
+        <p className="muted small">
+          {escrow ? "Waiting for the host to release the prize." : "Prize pool settled."}
+        </p>
+      )}
     </div>
   );
 }

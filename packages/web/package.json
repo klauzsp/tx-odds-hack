@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
+    "test:escrow": "node scripts/test-escrow.mjs",
     "start": "next start -p 3000",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anchor-lang/core": "^1.1.2",
     "@nextgoal/shared": "workspace:*",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",

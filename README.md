@@ -20,12 +20,40 @@ packages/
   shared/   Types shared by server & client (events, session state, socket contract)
   server/   Socket.IO game server — sessions, match engine, scoring (in-memory)
   web/      Next.js app — join/lobby/live match/full-time screens
+programs/
+  nextgoal_escrow/  Anchor program — one SOL escrow PDA per game session
 ```
 
 - **`server/src/feed.ts`** — feed abstraction. `FEED=sim` (default) replays the bundled England vs Mexico fixture; `FEED=txline` consumes the real TxLINE SSE streams.
 - **`server/src/fixture.ts`** + **`simulatedFeed.ts`** — the demo replay: match events (goals, half-time) interleaved with next-goal odds ticks, one match minute per tick.
 - **`server/src/txline/`** — real [TxLINE](https://txline-docs.txodds.com/documentation/quickstart) integration (see below).
-- **`server/src/session.ts`** — all game rules: join/rejoin (same name reclaims a disconnected seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
+- **`server/src/session.ts`** — all game rules: join/rejoin (the connected wallet reclaims its seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
+
+## SOL prize-pool escrow
+
+Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a session account from `["nextgoal", escrowId]`, so sessions never share a pot. Creating a game initializes that PDA and deposits the host's 0.1 devnet SOL entry; joining deposits the second entry. The server verifies both wallets against the on-chain account before kickoff.
+
+At full time the host signs the settlement transaction using the server-computed winner wallet. The program pays the complete tracked pool, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Its `cancel` instruction refunds every recorded depositor if a lobby is abandoned.
+
+Build and deploy it to devnet:
+
+```bash
+pnpm anchor:build
+solana config set --url devnet
+solana balance
+anchor deploy --provider.cluster devnet
+```
+
+The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. Keep `target/deploy/nextgoal_escrow-keypair.json` safe: it is intentionally gitignored and controls that program address. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
+
+For a local money-flow test, start a validator with the compiled program and run:
+
+```bash
+solana-test-validator --reset \
+  --bpf-program Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET \
+  target/deploy/nextgoal_escrow.so
+pnpm --filter @nextgoal/web test:escrow
+```
 
 ## Live TxLINE data (World Cup free tier)
 
@@ -54,7 +82,7 @@ Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = rea
 
 ## Roadmap
 
-- **Anchor / SOL prize pot** — escrow program: both players deposit at kickoff, server (or an oracle-signed result) releases the pot to the winner at full time. The winner IDs are already computed in `Session.finish()`.
+- **Oracle-authorized settlement** — the minimal escrow trusts the session host to submit the winner wallet. Replace the host authority with a server/oracle result signature before using real mainnet SOL.
 - **Next-goal odds from TxLINE** — map the real odds market in `txline/feed.ts` `onOdds` so live odds drive the payout multiplier.
 - **Supabase** — auth/profiles, match history, and persistent leaderboards once the live loop is solid.
 - **More question types** — next scorer by player, over/under, will there be a goal before 60', etc. The question/result plumbing is generic enough to extend.

@@ -2,6 +2,7 @@
   "name": "nextgoal",
   "private": true,
   "scripts": {
+    "anchor:build": "anchor build",
     "dev": "pnpm --parallel -r run dev",
     "typecheck": "pnpm -r run typecheck"
   },

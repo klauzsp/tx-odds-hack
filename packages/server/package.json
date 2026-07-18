@@ -16,7 +16,7 @@
     "@coral-xyz/anchor": "0.32.1",
     "@nextgoal/shared": "workspace:*",
     "@solana/spl-token": "^0.4.12",
-    "@solana/web3.js": "^1.91.9",
+    "@solana/web3.js": "^1.98.4",
     "eventsource": "^4.0.0",
     "socket.io": "^4.8.1",
     "tweetnacl": "^1.0.3"

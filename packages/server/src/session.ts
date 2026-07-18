@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type {
   ActiveQuestion,
   FeedEvent,
@@ -70,6 +70,7 @@ const QUESTION_TYPES = Object.keys(QUESTION_SPECS) as QuestionType[];
 interface PlayerInternal {
   id: string;
   name: string;
+  wallet: string;
   score: number;
   connected: boolean;
 }
@@ -112,29 +113,34 @@ export class Session {
 
   constructor(
     readonly code: string,
+    readonly escrowId: string,
     private readonly notify: (session: Session) => void,
   ) {}
 
-  join(rawName: string): JoinResult {
+  join(rawName: string, wallet: string): JoinResult {
     const name = rawName.trim();
     if (!name) return { ok: false, error: "Enter a name first." };
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet))
+      return { ok: false, error: "Connect a valid Solana wallet first." };
 
-    // Same name reclaims its seat, so a dropped player can rejoin mid-match.
-    const existing = [...this.players.values()].find(
-      (p) => p.name.toLowerCase() === name.toLowerCase(),
-    );
+    // Wallet ownership reclaims a seat; names alone are not safe identity once
+    // a real prize pool is attached to the game.
+    const existing = [...this.players.values()].find((p) => p.wallet === wallet);
     if (existing) {
       existing.connected = true;
       this.notify(this);
       return { ok: true, playerId: existing.id };
     }
 
+    if ([...this.players.values()].some((p) => p.name.toLowerCase() === name.toLowerCase()))
+      return { ok: false, error: "That name is already taken in this session." };
+
     if (this.status !== "lobby") return { ok: false, error: "That match has already kicked off." };
     if (this.players.size >= MAX_PLAYERS)
       return { ok: false, error: `Session is full (${MAX_PLAYERS} players).` };
 
     const id = randomUUID();
-    this.players.set(id, { id, name, score: 0, connected: true });
+    this.players.set(id, { id, name, wallet, score: 0, connected: true });
     if (this.players.size === 1) this.hostId = id;
     this.notify(this);
     return { ok: true, playerId: id };
@@ -335,6 +341,7 @@ export class Session {
     }));
     return {
       code: this.code,
+      escrowId: this.escrowId,
       status: this.status,
       hostId: this.hostId,
       players: [...this.players.values()].map((p) => ({ ...p })),
@@ -372,7 +379,9 @@ export class SessionStore {
         () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)],
       ).join("");
     } while (this.sessions.has(code));
-    const session = new Session(code, this.notify);
+    // The display code can eventually be reused; the escrow PDA seed cannot.
+    const escrowId = randomBytes(32).toString("hex");
+    const session = new Session(code, escrowId, this.notify);
     this.sessions.set(code, session);
     return session;
   }

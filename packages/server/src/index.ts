@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@nextgoal/shared";
 import { Session, SessionStore } from "./session";
+import { verifyEscrowReady } from "./escrow";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -25,9 +26,9 @@ const store = new SessionStore((session: Session) => {
 });
 
 io.on("connection", (socket) => {
-  socket.on("session:create", ({ name }, cb) => {
+  socket.on("session:create", ({ name, wallet }, cb) => {
     const session = store.create();
-    const result = session.join(name);
+    const result = session.join(name, wallet);
     if (!result.ok) return cb(result);
     socket.data.code = session.code;
     socket.data.playerId = result.playerId;
@@ -35,10 +36,10 @@ io.on("connection", (socket) => {
     cb({ ok: true, playerId: result.playerId, code: session.code, state: session.toState() });
   });
 
-  socket.on("session:join", ({ code, name }, cb) => {
+  socket.on("session:join", ({ code, name, wallet }, cb) => {
     const session = store.get(code);
     if (!session) return cb({ ok: false, error: "No session with that code." });
-    const result = session.join(name);
+    const result = session.join(name, wallet);
     if (!result.ok) return cb(result);
     socket.data.code = session.code;
     socket.data.playerId = result.playerId;
@@ -46,10 +47,12 @@ io.on("connection", (socket) => {
     cb({ ok: true, playerId: result.playerId, code: session.code, state: session.toState() });
   });
 
-  socket.on("match:start", (cb) => {
+  socket.on("match:start", async (cb) => {
     const session = socket.data.code ? store.get(socket.data.code) : undefined;
     if (!session || !socket.data.playerId)
       return cb({ ok: false, error: "Join a session first." });
+    const escrowError = await verifyEscrowReady(session.toState());
+    if (escrowError) return cb({ ok: false, error: escrowError });
     cb(session.start(socket.data.playerId));
   });
 

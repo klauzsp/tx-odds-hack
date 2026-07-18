@@ -1,0 +1,511 @@
+{
+  "address": "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET",
+  "metadata": {
+    "name": "nextgoal_escrow",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Per-session SOL prize pool escrow for NextGoal"
+  },
+  "instructions": [
+    {
+      "name": "cancel",
+      "docs": [
+        "Cancels an unplayed session and refunds every recorded entry fee."
+      ],
+      "discriminator": [
+        232,
+        219,
+        223,
+        41,
+        219,
+        236,
+        220,
+        190
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "deposit",
+      "docs": [
+        "Adds exactly one entry fee to the session prize pool."
+      ],
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_session",
+      "docs": [
+        "Creates one escrow PDA for one off-chain game session."
+      ],
+      "discriminator": [
+        69,
+        130,
+        92,
+        236,
+        107,
+        231,
+        159,
+        129
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "session_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "session_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "entry_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "settle",
+      "docs": [
+        "Pays the complete pool to one winner, or divides it across tied winners.",
+        "The game authority supplies winner accounts in the same order as `winners`."
+      ],
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "winners",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "SessionEscrow",
+      "discriminator": [
+        251,
+        205,
+        39,
+        211,
+        38,
+        92,
+        234,
+        241
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "Cancelled",
+      "discriminator": [
+        136,
+        23,
+        42,
+        65,
+        143,
+        233,
+        234,
+        46
+      ]
+    },
+    {
+      "name": "Deposited",
+      "discriminator": [
+        111,
+        141,
+        26,
+        45,
+        161,
+        35,
+        100,
+        57
+      ]
+    },
+    {
+      "name": "SessionInitialized",
+      "discriminator": [
+        22,
+        195,
+        156,
+        137,
+        167,
+        239,
+        207,
+        87
+      ]
+    },
+    {
+      "name": "Settled",
+      "discriminator": [
+        232,
+        210,
+        40,
+        17,
+        142,
+        124,
+        145,
+        238
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidEntryAmount",
+      "msg": "The entry fee must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "AlreadyDeposited",
+      "msg": "This wallet has already deposited into the session"
+    },
+    {
+      "code": 6002,
+      "name": "SessionFull",
+      "msg": "The session has reached its depositor limit"
+    },
+    {
+      "code": 6003,
+      "name": "ArithmeticOverflow",
+      "msg": "The prize pool arithmetic overflowed"
+    },
+    {
+      "code": 6004,
+      "name": "NoWinners",
+      "msg": "At least one winner is required"
+    },
+    {
+      "code": 6005,
+      "name": "TooManyWinners",
+      "msg": "The winner list exceeds the supported limit"
+    },
+    {
+      "code": 6006,
+      "name": "WinnerAccountsMismatch",
+      "msg": "Winner accounts do not match the declared winners"
+    },
+    {
+      "code": 6007,
+      "name": "DuplicateWinner",
+      "msg": "A winner was supplied more than once"
+    },
+    {
+      "code": 6008,
+      "name": "EmptyPrizePool",
+      "msg": "The prize pool is empty"
+    },
+    {
+      "code": 6009,
+      "name": "Unauthorized",
+      "msg": "Only the session authority can perform this action"
+    },
+    {
+      "code": 6010,
+      "name": "DepositorAccountsMismatch",
+      "msg": "Refund accounts do not match the session depositors"
+    }
+  ],
+  "types": [
+    {
+      "name": "Cancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deposited",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "prize_pool",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionEscrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "entry_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "prize_pool",
+            "type": "u64"
+          },
+          {
+            "name": "depositors",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "session_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "entry_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Settled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "winners",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "prize_pool",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "ESCROW_SEED",
+      "type": "bytes",
+      "value": "[110, 101, 120, 116, 103, 111, 97, 108]"
+    }
+  ]
+}
