@@ -20,11 +20,11 @@ MatchPot uses TXODDS data to create gameplay rather than simply reproduce a scor
 
 ## Demo modes
 
-| Mode | Players | Wallet | Prize pool | Data |
-|---|---:|---|---|---|
-| **Competitive replay** | 2 | Phantom | 0.1 devnet SOL each | Historical TxLINE events and odds |
-| **Free practice** | Player vs MatchBot | Not required | None | Same replay, questions and scoring |
-| **Upcoming live match** | 2 | Phantom | Opens 15 minutes before kickoff | TxLINE live score and odds streams |
+| Mode                    |            Players | Wallet       | Prize pool                      | Data                               |
+| ----------------------- | -----------------: | ------------ | ------------------------------- | ---------------------------------- |
+| **Competitive replay**  |                  2 | Phantom      | 0.1 devnet SOL each             | Historical TxLINE events and odds  |
+| **Free practice**       | Player vs MatchBot | Not required | None                            | Same replay, questions and scoring |
+| **Upcoming live match** |                  2 | Phantom      | Opens 15 minutes before kickoff | TxLINE live score and odds streams |
 
 The demo includes four verified historical fixtures plus the World Cup third-place play-off and final. The selected fixture determines whether MatchPot uses historical or live TxLINE APIs—there is only one application and one startup command.
 
@@ -39,11 +39,11 @@ The demo includes four verified historical fixtures plus the World Cup third-pla
 
 ### Scoring
 
-| Question | Resolution | Points |
-|---|---|---:|
-| Who scores the next goal? | Next TxLINE goal | `100 × captured TXODDS price` |
-| Which team gets the next card? | Next yellow or red card | 150 |
-| Which team wins the next corner? | Next corner | 150 |
+| Question                         | Resolution              |                        Points |
+| -------------------------------- | ----------------------- | ----------------------------: |
+| Who scores the next goal?        | Next TxLINE goal        | `100 × captured TXODDS price` |
+| Which team gets the next card?   | Next yellow or red card |                           150 |
+| Which team wins the next corner? | Next corner             |                           150 |
 
 Next-goal prices are capped between **1.05× and 6.00×** so one long-shot call cannot decide the entire match. Questions that remain unresolved at full time are voided.
 
@@ -112,14 +112,14 @@ Equal-score winners split the pool. Zero-score games refund every player, and pa
 
 ## Technology
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 15, React 19, TypeScript |
-| Realtime | Socket.IO |
-| Sports data | TXODDS TxLINE APIs and SSE |
-| Wallet | Solana Wallet Adapter and Phantom |
-| Smart contract | Rust and Anchor 0.32 |
-| Hosting | Vercel and Render |
+| Layer          | Technology                        |
+| -------------- | --------------------------------- |
+| Frontend       | Next.js 15, React 19, TypeScript  |
+| Realtime       | Socket.IO                         |
+| Sports data    | TXODDS TxLINE APIs and SSE        |
+| Wallet         | Solana Wallet Adapter and Phantom |
+| Smart contract | Rust and Anchor 0.32              |
+| Hosting        | Vercel and Render                 |
 
 ## Run locally
 
@@ -147,11 +147,3 @@ The selected fixture routes to the correct feed automatically. Replay speed can 
 pnpm typecheck
 pnpm --filter @matchpot/web build
 ```
-
-## Current scope
-
-MatchPot is a devnet hackathon prototype, not a mainnet wagering product. Sessions are currently stored in memory and are lost when the game server restarts. The next production steps would be persistent session storage, dynamically populated fixtures and independently authorized settlement.
-
----
-
-Built with TXODDS, Solana and far too much stoppage-time optimism.
