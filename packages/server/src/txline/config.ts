@@ -1,4 +1,5 @@
 // TxLINE network configuration (see https://txline-docs.txodds.com/documentation/worldcup)
+import { readFileSync } from "node:fs";
 
 export interface TxLineNetworkConfig {
   apiBaseUrl: string;
@@ -26,7 +27,16 @@ const NETWORKS: Record<string, TxLineNetworkConfig> = {
 };
 
 export function networkConfig(): TxLineNetworkConfig {
-  const network = process.env.TXLINE_NETWORK ?? "mainnet";
+  // Priority: explicit env > network recorded at txline:setup time > mainnet.
+  let network = process.env.TXLINE_NETWORK;
+  if (!network) {
+    try {
+      network = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf8")).network;
+    } catch {
+      /* no credentials yet */
+    }
+  }
+  network ??= "mainnet";
   const config = NETWORKS[network];
   if (!config) throw new Error(`Unknown TXLINE_NETWORK "${network}" (mainnet | devnet)`);
   return config;

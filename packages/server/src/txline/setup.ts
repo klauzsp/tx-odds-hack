@@ -122,9 +122,15 @@ async function main() {
     headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
     body: JSON.stringify({ txSig, walletSignature, leagues }),
   });
-  if (!res.ok) throw new Error(`Activation failed: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as { token?: string };
-  const apiToken = body.token ?? (body as unknown as string);
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`Activation failed: ${res.status} ${raw}`);
+  // The endpoint may return either {"token": "..."} or the bare token as plain text.
+  let apiToken: string;
+  try {
+    apiToken = (JSON.parse(raw) as { token?: string }).token ?? raw.trim();
+  } catch {
+    apiToken = raw.trim();
+  }
   saveApiToken(apiToken);
 
   console.log("✅ API token saved to packages/server/.txline-credentials.json");

@@ -1,4 +1,4 @@
-import type { TeamCode } from "@nextgoal/shared";
+import type { NextGoalOdds, TeamCode } from "@nextgoal/shared";
 import type { FeedHandlers, MatchFeed } from "../feed";
 import { apiGet, ensureAuth, type TxLineAuth } from "./auth";
 import { openStream } from "./stream";
@@ -23,6 +23,12 @@ const GOAL_STAT_KEYS: Record<TeamCode, number> = { [P1_TEAM]: 1, [P2_TEAM]: 2 } 
   TeamCode,
   number
 >;
+
+/** Maps TxLINE participant slots (1 = home) to app team codes. */
+export interface ParticipantTeams {
+  p1: TeamCode;
+  p2: TeamCode;
+}
 
 export class TxLineFeed implements MatchFeed {
   private sources: EventSource[] = [];
@@ -104,11 +110,10 @@ export class TxLineFeed implements MatchFeed {
   }
 
   private onOdds(raw: string) {
-    // TODO(hackathon): map the real next-goal market once probe shows the odds
-    // payload shape, then call this.handlers.onEvent({ kind: "ODDS", ... }).
-    // Until then the session keeps its current odds and scoring still works.
-    if (raw.includes(String(this.fixtureId))) {
-      console.log("[txline] odds message for our fixture:", truncate(raw));
+    for (const record of parseRecords(raw)) {
+      if (!this.isOurFixture(record)) continue;
+      const odds = mapNextGoalOdds(record, { p1: P1_TEAM, p2: P2_TEAM });
+      if (odds) this.handlers?.onEvent({ kind: "ODDS", minute: this.minute, nextGoal: odds });
     }
   }
 
@@ -126,7 +131,7 @@ export class TxLineFeed implements MatchFeed {
   }
 }
 
-type Rec = Record<string, any>;
+export type Rec = Record<string, any>;
 
 function parseRecords(raw: string): Rec[] {
   try {
@@ -157,6 +162,46 @@ function readStat(record: Rec, key: number): number | null {
   }
   if (stats && typeof stats === "object" && key in stats) return Number(stats[key]);
   return null;
+}
+
+// Odds messages look like (confirmed live against devnet, 2026-07-18):
+//   { FixtureId, Ts, Bookmaker: "TXLineStablePriceDemargined", SuperOddsType,
+//     MarketParameters: "line=1.5"|null, MarketPeriod: "half=1"|null,
+//     PriceNames: ["part1","draw","part2"], Prices: [2508,2690,4356], Pct: [...] }
+// Prices are decimal odds ×1000.
+export function mapNextGoalOdds(record: Rec, teams: ParticipantTeams): NextGoalOdds | null {
+  const type = String(record.SuperOddsType ?? "");
+  const names: unknown = record.PriceNames;
+  const prices: unknown = record.Prices;
+  if (!Array.isArray(names) || !Array.isArray(prices)) return null;
+  const priceOf = (name: string): number | null => {
+    const i = names.indexOf(name);
+    return i >= 0 && typeof prices[i] === "number" && prices[i] > 0 ? prices[i] / 1000 : null;
+  };
+  const p1 = priceOf("part1");
+  const p2 = priceOf("part2");
+  if (!p1 || !p2) return null;
+
+  // Ideal: a dedicated next-goal market, if the feed carries one in-running.
+  if (type.includes("NEXTGOAL") || type.includes("NEXT_GOAL")) {
+    return { [teams.p1]: round2(p1), [teams.p2]: round2(p2) } as NextGoalOdds;
+  }
+
+  // Fallback: approximate from the demargined full-match 1X2 by renormalising
+  // the two win probabilities without the draw.
+  if (type === "1X2_PARTICIPANT_RESULT" && record.MarketPeriod == null) {
+    const q1 = 1 / p1;
+    const q2 = 1 / p2;
+    return {
+      [teams.p1]: round2((q1 + q2) / q1),
+      [teams.p2]: round2((q1 + q2) / q2),
+    } as NextGoalOdds;
+  }
+  return null;
+}
+
+function round2(x: number): number {
+  return Math.round(x * 100) / 100;
 }
 
 function readPhase(record: Rec): "HALF_TIME" | "FULL_TIME" | null {

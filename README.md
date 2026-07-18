@@ -38,11 +38,15 @@ pnpm txline:probe                                           # list World Cup fix
 pnpm txline:probe <fixtureId>                               # inspect one fixture's snapshots + messages
 ```
 
-Then run the game against the live feed:
+Then pick a feed mode:
 
 ```bash
-FEED=txline TXLINE_FIXTURE_ID=<id> pnpm dev
+FEED=txline-history pnpm dev                 # ⭐ replay the REAL Mexico vs England match (fixture 18192996)
+FEED=txline TXLINE_FIXTURE_ID=<id> pnpm dev  # live match via the SSE streams
+pnpm dev                                     # hand-written simulation (no credentials needed)
 ```
+
+`txline-history` is the hackathon demo mode: it pulls the full recorded TxLINE soccer feed for a finished match (`/scores/historical/{fixtureId}` — 1,000+ records: goals, scorers via lineups, cards, VAR, penalties) plus real in-running odds (`/odds/snapshot?asOf=…`), maps them onto game events, and replays at demo speed. Verified end-to-end: England 3–2 Mexico with Bellingham ×2, Quiñones, Kane, and Jiménez — the actual result.
 
 Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), `TXLINE_P1_TEAM` / `TXLINE_P2_TEAM` (map TxLINE participant slots to app teams, default ENG/MEX).
 
