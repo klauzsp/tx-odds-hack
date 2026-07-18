@@ -110,6 +110,9 @@ io.on("connection", (socket) => {
     const startReservation = session.beginStart(socket.data.playerId);
     if (!startReservation.ok) return cb(startReservation);
     if (session.mode === "practice") return cb(session.start(socket.data.playerId));
+    // A failed historical-feed preparation can be retried without attempting
+    // to lock the same escrow account a second time.
+    if (session.toState().lockSignature) return cb(session.start(socket.data.playerId));
     const escrowError = await verifyEscrowReady(session.toState());
     if (escrowError) {
       session.abortStart();

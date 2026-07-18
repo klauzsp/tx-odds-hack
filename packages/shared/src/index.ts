@@ -170,6 +170,8 @@ export interface SessionState {
   payoutSignature: string | null;
   /** Devnet transaction that locked the funded pool at kickoff. */
   lockSignature: string | null;
+  /** Feed preparation failure shown in the lobby so kickoff can be retried. */
+  feedError: string | null;
   /** True once an expired session has been checked and any deposits returned. */
   refundComplete: boolean;
   /** Devnet refund transaction, or null when the expired session held no deposits. */

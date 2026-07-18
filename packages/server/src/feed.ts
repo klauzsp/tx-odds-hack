@@ -4,6 +4,7 @@ import { TxLineHistoricalFeed } from "./txline/historicalFeed";
 
 export interface FeedHandlers {
   onReady(): void;
+  onError(error: unknown): void;
   onMinute(minute: number): void;
   onEvent(event: FeedEvent): void;
 }

@@ -113,7 +113,7 @@ export default function GameClient() {
   ]);
 
   useEffect(() => {
-    if (!startBusy || !state || state.status === "lobby") return;
+    if (!startBusy || !state || (state.status === "lobby" && !state.feedError)) return;
     if (startTimeoutRef.current) window.clearTimeout(startTimeoutRef.current);
     startTimeoutRef.current = null;
     setStartBusy(false);
@@ -674,6 +674,7 @@ function LobbyScreen(props: {
           <p className="muted">Waiting for the host to kick off…</p>
         )}
 
+        {state.feedError && <p className="error">TXODDS feed: {state.feedError}</p>}
         {props.error && <p className="error">{props.error}</p>}
       </div>
     </main>
@@ -681,8 +682,11 @@ function LobbyScreen(props: {
 }
 
 function useCurrentTime(): number {
-  const [now, setNow] = useState(() => Date.now());
+  // Keep the server render and first browser render identical; populate the
+  // real clock only after hydration.
+  const [now, setNow] = useState(0);
   useEffect(() => {
+    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);

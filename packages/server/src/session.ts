@@ -113,6 +113,7 @@ export class Session {
   private noContest = false;
   private payoutSignature: string | null = null;
   private lockSignature: string | null = null;
+  private feedError: string | null = null;
   private refundComplete = false;
   private refundSignature: string | null = null;
   private matchFeed: MatchFeed | null = null;
@@ -195,6 +196,7 @@ export class Session {
     this.matchFeed = feed;
     this.matchFeed.start({
       onReady: () => this.handleFeedReady(),
+      onError: (error) => this.handleFeedError(error),
       onMinute: (minute) => this.handleMinute(minute),
       onEvent: (event) => this.handleFeedEvent(event),
     });
@@ -210,6 +212,18 @@ export class Session {
     this.nextOpenMinute = FIRST_QUESTION_DELAY();
     // Historical feeds call this only after their TXODDS data is prepared, so
     // clients keep showing the kickoff loader instead of a frozen 0' clock.
+    this.notify(this);
+  }
+
+  private handleFeedError(error: unknown) {
+    this.feedError =
+      error instanceof Error ? error.message : "The TXODDS match feed could not be prepared.";
+    if (this.status === "lobby") {
+      this.starting = false;
+      this.matchFeed?.stop();
+      this.matchFeed = null;
+      this.scheduleExpiry();
+    }
     this.notify(this);
   }
 
@@ -232,6 +246,7 @@ export class Session {
   beginStart(playerId: string): ActionResult {
     const readinessError = this.startReadinessError(playerId);
     if (readinessError) return { ok: false, error: readinessError };
+    this.feedError = null;
     this.starting = true;
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
@@ -501,6 +516,7 @@ export class Session {
       noContest: this.noContest,
       payoutSignature: this.payoutSignature,
       lockSignature: this.lockSignature,
+      feedError: this.feedError,
       refundComplete: this.refundComplete,
       refundSignature: this.refundSignature,
     };

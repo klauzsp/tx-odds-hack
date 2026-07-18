@@ -31,7 +31,10 @@ export class TxLineHistoricalFeed implements MatchFeed {
         this.inner = new SimulatedFeed(events, MS_PER_MINUTE);
         this.inner.start(handlers);
       })
-      .catch((err) => console.error("[txline] historical feed failed:", err));
+      .catch((err) => {
+        console.error("[txline] historical feed failed:", err);
+        handlers.onError(err);
+      });
   }
 
   stop() {
