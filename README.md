@@ -1,111 +1,306 @@
-# MatchPot ⚽
+# MatchPot ⚽🏆
 
-Live prediction battles for the World Cup, built for the TXODDS hackathon (consumer & fan experiences track). Friends join a session, get prompted with prediction questions during the match, and the player with the most points at full time takes the SOL prize pot.
+> Live, odds-powered prediction battles for the FIFA World Cup.
 
-**Current build:** two players choose either a verified World Cup TxLINE replay or an upcoming live fixture. The demo catalogue contains four historical matches, France–England in the third-place play-off, and Spain–Argentina in the final. Upcoming matches show a live countdown and remain free pending lobbies; escrow deposits open 15 minutes before kickoff, and the match cannot start early. Sessions that remain unfunded five minutes after kickoff expire automatically, with any partial deposit refunded by the application. Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 12-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time.
+[**Play the live demo**](https://tx-odds-hack-web.vercel.app/) · [TXODDS / TxLINE](https://txline-docs.txodds.com/documentation/quickstart) · [Solana program on devnet](https://explorer.solana.com/address/Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET?cluster=devnet)
 
-For an instant single-browser demo, choose a historical replay and select **Practice free vs MatchBot**. Practice uses the same feed, questions, and scoring engine, but requires no wallet or SOL and never creates an escrow. MatchBot answers after a short human-like delay, favours teams using the current odds, and occasionally misses a question.
+MatchPot turns a football match into a fast social prediction game. Two friends join a session, lock SOL into a shared prize pool, and answer in-play questions such as **“Who scores the next goal?”** Correct calls earn points using the TXODDS price captured when the prediction is submitted. At full time, the highest score wins the pot and the application settles it automatically through an Anchor program on Solana.
 
-## Run it
+Built at the **TXODDS World Cup Hackathon at Encode Hub** for the consumer and fan experiences track.
+
+> The hosted backend uses a free Render instance and can take up to a minute to wake after being idle. For the quickest first look, choose a historical match and play **Practice free vs MatchBot**—no wallet or SOL required.
+
+## Why MatchPot?
+
+Watching football is already social; MatchPot gives every passage of play a small competitive stake. It uses TXODDS data for more than a scoreboard:
+
+- Historical TxLINE event data powers faithful, accelerated World Cup replays.
+- In-running TXODDS prices determine the points available for next-goal predictions.
+- Live score and odds streams are routed automatically for scheduled fixtures.
+- Odds are captured at submission time, so a difficult early call is worth more than an obvious late one.
+- Goals, cards and corners resolve open questions against the real match feed.
+
+The result is a short, understandable game loop that demonstrates how official sports data can create a new fan experience rather than simply reproduce a betting screen.
+
+## Demo modes
+
+| Mode | Players | Wallet | Prize pool | Data |
+|---|---:|---|---|---|
+| **Competitive replay** | 2 | Phantom | 0.1 devnet SOL each | Recorded TxLINE events and historical odds |
+| **Free practice** | Player vs MatchBot | Optional | None | Same replay, questions and scoring |
+| **Upcoming live match** | 2 | Phantom | Opens 15 minutes before kickoff | TxLINE live score and odds streams |
+
+The curated demo catalogue contains four verified historical fixtures plus the World Cup third-place play-off and final as scheduled fixtures. Fixture selection is the source of truth: users run one app and one command; the server chooses the correct historical or live TxLINE adapter automatically.
+
+## How a game works
+
+1. The host selects a fixture and creates a session.
+2. A friend joins using the four-character code or QR invitation.
+3. In competitive mode, each wallet deposits **0.1 SOL** into that session's unique escrow PDA.
+4. At kickoff, the server verifies every depositor and irreversibly locks the pool.
+5. Prediction questions appear throughout the match and remain open for 12 match minutes.
+6. Answers lock with the current TXODDS price and resolve on the next matching event.
+7. At full time, the highest score wins. Ties split the pool; if everyone scores zero, every entry is refunded.
+8. The application submits settlement and the UI links to the resulting Solana transaction.
+
+### Scoring
+
+| Question | Resolution source | Points |
+|---|---|---:|
+| Who scores the next goal? | Next goal in the TxLINE feed | `100 × captured TXODDS price` |
+| Which team gets the next card? | Next yellow or red card | 150 |
+| Which team wins the next corner? | Next corner | 150 |
+
+Next-goal prices are clamped between **1.05× and 6.00×** so a single long-shot prediction cannot decide the entire match. Unresolved questions are voided at full time.
+
+## Infrastructure
+
+```mermaid
+flowchart LR
+    subgraph Clients[Players]
+        P1[Player 1<br/>Phantom wallet]
+        P2[Player 2<br/>Phantom wallet]
+    end
+
+    subgraph Vercel[Vercel]
+        Web[Next.js 15 frontend<br/>React 19]
+    end
+
+    subgraph Render[Render - single Node service]
+        Socket[Socket.IO gateway]
+        Engine[Session and scoring engine<br/>in-memory state]
+        Adapter[TxLINE feed adapters]
+        Settler[Application settlement signer]
+        Socket <--> Engine
+        Engine <--> Adapter
+        Engine --> Settler
+    end
+
+    subgraph TXODDS[TXODDS / TxLINE]
+        History[Historical scores SSE]
+        Odds[Odds snapshots]
+        Live[Live score and odds streams]
+    end
+
+    subgraph Solana[Solana devnet]
+        RPC[Solana RPC]
+        Program[Anchor escrow program]
+        PDA[One escrow PDA<br/>per MatchPot session]
+        RPC --> Program --> PDA
+    end
+
+    P1 <-->|HTTPS| Web
+    P2 <-->|HTTPS| Web
+    Web <-->|Socket.IO| Socket
+    Adapter <-->|Authenticated API and SSE| History
+    Adapter <-->|Authenticated API| Odds
+    Adapter <-->|Authenticated SSE| Live
+    Web -->|Wallet-signed initialize and deposit| RPC
+    Engine -->|Verify funded PDA| RPC
+    Settler -->|Lock, settle or refund| RPC
+
+    GitHub[(GitHub main)] -.->|Auto-deploy| Vercel
+    GitHub -.->|Auto-deploy| Render
+```
+
+### Runtime responsibilities
+
+- **Next.js frontend:** wallet connection, fixture selection, session UX, predictions, live odds, QR invites and settlement receipts.
+- **Socket.IO server:** lobby membership, reconnection, question scheduling, score calculation and winner selection.
+- **TxLINE adapters:** historical SSE parsing, historical odds sampling, accelerated replay, and live score/odds streaming.
+- **Anchor program:** session escrow creation, deposits, irreversible kickoff lock, winner payout, tie splitting and refunds.
+- **Shared package:** fixture catalogue, Socket.IO contracts and session/event types used by both frontend and server.
+
+Sessions currently live in one server process and are intentionally ephemeral for the hackathon demo. This is why the Socket.IO backend runs as a single long-lived Render service rather than independently scaled serverless functions.
+
+## TXODDS integration
+
+Historical fixtures use the recorded scores endpoint at `/scores/historical/{fixtureId}`. MatchPot maps kickoff, goals, cards, corners, half-time, full-time and selected commentary into a common event model. It samples `/odds/snapshot/{fixtureId}?asOf=...` across the match, then replays the combined timeline at one match minute per tick.
+
+Upcoming fixtures use the score and odds streams directly. Participant 1 maps to the home side and participant 2 to the away side, while the rest of the application uses stable `HOME` and `AWAY` identifiers. This keeps game logic independent of any particular country or fixture.
+
+For next-goal scoring, MatchPot prefers a dedicated next-goal market when present. Its fallback derives a two-team probability from the demargined in-running 1X2 market, excluding the draw, and applies the gameplay cap described above.
+
+## Solana escrow
+
+The deployed Anchor program is reusable across sessions:
+
+| Item | Devnet address |
+|---|---|
+| Program | [`Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`](https://explorer.solana.com/address/Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET?cluster=devnet) |
+| Settlement authority | [`6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj`](https://explorer.solana.com/address/6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj?cluster=devnet) |
+
+Every game receives a random 32-byte `escrowId`. The program derives a unique PDA from that ID, so invite-code reuse can never mix prize pools.
+
+The host initializes the PDA, but does **not** control settlement after kickoff. The application settlement authority locks the account before the game begins and signs the full-time payout selected by the game engine. The program verifies the authority, lock state and supplied winner accounts before moving lamports. Equal-score winners split the pot, with any indivisible remainder assigned deterministically.
+
+If an upcoming session is still unfunded five minutes after kickoff, it expires and the application refunds any partial deposits. Before a pool is locked, the host can also cancel an abandoned session. Settled and cancelled accounts close, returning account rent to the host.
+
+> **Trust model:** funds are enforced by the on-chain program, but winner calculation is performed by the MatchPot application server using TXODDS events. The dedicated settlement signer removes unilateral host control; a production version should replace it with oracle-signed results, a threshold signer or an independently verifiable result commitment before accepting mainnet funds.
+
+## Technology
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 15, React 19, TypeScript |
+| Realtime transport | Socket.IO |
+| Sports data | TXODDS TxLINE authenticated APIs and SSE |
+| Wallet | Solana Wallet Adapter and Phantom |
+| Smart contract | Rust and Anchor 0.32 |
+| Chain | Solana devnet |
+| Monorepo | pnpm workspaces |
+| Hosting | Vercel frontend, Render game server |
+
+## Run locally
+
+### Prerequisites
+
+- Node.js 22 or newer
+- pnpm 10.11
+- A Phantom wallet for competitive mode
+- TxLINE credentials for historical or live data
+- Solana CLI and Anchor only when building or redeploying the program
+
+Install dependencies and run both applications from the repository root:
 
 ```bash
 pnpm install
-pnpm dev  # game server on :3001, Next.js on :3000
+pnpm dev
 ```
 
-Open http://localhost:3000 in **two browser windows** (or one normal + one incognito). Create a session in one, join with the 4-letter code in the other, and the host kicks off. The match replays 90 minutes at ~800 ms per minute (≈72 s); tune with `MS_PER_MINUTE=2000 pnpm dev`.
+This starts:
 
-## Architecture
+- Web application: <http://localhost:3000>
+- Socket.IO game server: <http://localhost:3001>
 
+For a two-player test, use two browser profiles so Phantom can connect different accounts. For the quickest test, use **Practice free vs MatchBot** in one browser.
+
+Historical matches replay at approximately 800 ms per match minute, or around 72 seconds for regulation time:
+
+```bash
+MS_PER_MINUTE=1500 pnpm dev
 ```
-packages/
-  shared/   Types shared by server & client (events, session state, socket contract)
-  server/   Socket.IO game server — sessions, match engine, scoring (in-memory)
-  web/      Next.js app — join/lobby/live match/full-time screens
-programs/
-  matchpot_escrow/  Anchor program — one SOL escrow PDA per game session
+
+### Configure TxLINE
+
+If `packages/server/.txline-credentials.json` does not exist, activate the API once with a funded Solana wallet:
+
+```bash
+cd packages/server
+TXLINE_NETWORK=devnet \
+TXLINE_WALLET=/absolute/path/to/solana-keypair.json \
+pnpm txline:setup
 ```
 
-- **`server/src/feed.ts`** — feed abstraction. Every session owns its selected fixture and feed instance; completed fixtures replay their historical data and upcoming fixtures consume live SSE streams after kickoff.
-- **`server/src/simulatedFeed.ts`** — paces recorded TxLINE events at demo speed for historical selections.
-- **`server/src/txline/`** — real [TxLINE](https://txline-docs.txodds.com/documentation/quickstart) integration (see below).
-- **`server/src/session.ts`** — all game rules: join/rejoin (the connected wallet reclaims its seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
+Useful diagnostics:
 
-## Deploying the demo
+```bash
+pnpm --filter @matchpot/server txline:verify
+pnpm --filter @matchpot/server txline:probe
+pnpm --filter @matchpot/server txline:probe <fixtureId>
+```
 
-Deploy the two runtime processes separately:
+There is no separate historical-mode command. The selected fixture controls feed routing.
 
-1. Deploy the Socket.IO service from the repository root using `render.yaml`. Set
-   `TXLINE_API_TOKEN` to the `apiToken` in the ignored
-   `packages/server/.txline-credentials.json`, and set
-   `ESCROW_SETTLER_SECRET_KEY` to the complete JSON array in the ignored
-   `_keys/devnet-test2.json`. `SOLANA_RPC_URL` is optional; without it the server
-   uses Solana's public devnet endpoint. Keep `TXLINE_NETWORK` equal to the
-   `network` recorded in the credentials file (the supplied blueprint uses devnet).
-2. Import the same GitHub repository into Vercel, set its Root Directory to
-   `packages/web`, and add `NEXT_PUBLIC_SERVER_URL` with the HTTPS URL of the
-   deployed game server. `NEXT_PUBLIC_SOLANA_RPC_URL` is optional.
-3. Deploy the Vercel project. Pushes to `main` update production automatically;
-   other branches receive Vercel preview deployments.
+## Environment variables
 
-The free Render service sleeps after 15 minutes without inbound traffic, so open
-its health URL shortly before a demo. Use an always-on instance if cold starts are
-unacceptable. Never commit either secret value.
+### Frontend
 
-## SOL prize-pool escrow
+| Variable | Required | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_SERVER_URL` | In production | Public Socket.IO server URL |
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | No | Custom browser-side Solana devnet RPC |
 
-Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a unique session account from its compatibility seed and that `escrowId`, so sessions never share a pot. Historical sessions initialize that PDA and collect entries immediately. Upcoming sessions remain free until their entry window opens; the host's first deposit initializes the PDA and the second player then funds it. The server verifies both wallets against the on-chain account before kickoff.
+### Server
 
-At kickoff the application locks the funded escrow, permanently disabling host cancellation. At full time the server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, and returns every player's entry when all scores are zero. It closes the settled account and returns account rent to the host. Before kickoff the host can still cancel an abandoned lobby; the application can refund a partially funded upcoming session after its grace period.
+| Variable | Required | Purpose |
+|---|---|---|
+| `TXLINE_API_TOKEN` | In hosted environments | TxLINE API token; local development can use the ignored credentials file |
+| `TXLINE_NETWORK` | No | `devnet` or `mainnet`; must match the API token |
+| `TXLINE_SERVICE_LEVEL` | No | TxLINE subscription service level |
+| `ESCROW_SETTLER_SECRET_KEY` | For competitive hosting | Complete JSON secret-key array for the settlement authority |
+| `ESCROW_SETTLER_KEYPAIR` | No | Local path alternative to the secret-key environment variable |
+| `SOLANA_RPC_URL` | No | Server-side Solana RPC; defaults to public devnet |
+| `PORT` | No | Socket.IO HTTP port; defaults to `3001` |
+| `MS_PER_MINUTE` | No | Historical replay speed; defaults to `800` |
+| `QUESTION_WINDOW` | No | Answer window in match minutes; defaults to `12` |
+| `QUESTION_MIN_GAP` | No | Minimum gap between questions; defaults to `14` |
 
-Build and deploy it to devnet:
+Never commit `.txline-credentials.json`, `.env` files or anything under `_keys/`.
+
+## Build and deploy
+
+### Frontend — Vercel
+
+Import this GitHub repository and configure:
+
+- Root Directory: `packages/web`
+- Environment variable: `NEXT_PUBLIC_SERVER_URL=https://matchpot-server.onrender.com`
+- Include source files outside the root directory: enabled
+
+Pushes to `main` deploy to production; other branches receive preview deployments.
+
+### Game server — Render
+
+Create a Render Blueprint from the repository. [`render.yaml`](render.yaml) defines the Node web service. Supply these secrets in the Render dashboard:
+
+- `TXLINE_API_TOKEN`: only the token string, without quotation marks
+- `ESCROW_SETTLER_SECRET_KEY`: the complete JSON array, including `[` and `]`
+
+The health endpoint is <https://matchpot-server.onrender.com/>. Free instances sleep after 15 minutes without inbound traffic, so wake the service shortly before a live demonstration.
+
+### Anchor program — Solana devnet
 
 ```bash
 pnpm anchor:build
 pnpm anchor:deploy:devnet
 ```
 
-The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. The canonical program keypair is `_keys/matchpot_escrow-program-keypair.json`; the build script restores it into the disposable `target/` directory before every build. The funded devnet deployer and upgrade authority is `_keys/devnet-test.json` (`CWgRwTdXuxsL4P8TayCyREcfgjzZU4UC7bLZeopNJN5r`). Both are intentionally gitignored: keep an encrypted off-machine backup of `_keys/` and never commit or share its contents.
+The canonical program keypair, deployer keypair and settlement keypair are deliberately ignored. Keep encrypted off-machine backups; later upgrades reuse the same program address and upgrade authority.
 
-Initial deployment locks rent in the durable program account. Later upgrades reuse the same program and normally cost only transaction fees (plus a temporary deployment buffer), so the deployer should not need repeated large faucet top-ups. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
-
-The server settlement signer is `6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj` and is kept separate from the upgrade authority. Override its local key path with `ESCROW_SETTLER_KEYPAIR` when deploying the server elsewhere.
-
-For a local money-flow test, start a validator with the compiled program and run:
+For a local validator money-flow test:
 
 ```bash
 solana-test-validator --reset \
   --bpf-program Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET \
   target/deploy/matchpot_escrow.so
+
 pnpm --filter @matchpot/web test:escrow
 ```
 
-## Live TxLINE data (World Cup free tier)
+## Repository structure
 
-TxLINE gives free World Cup data; API access is granted via an on-chain Solana subscription (no TxL payment on the free tier, just tx fees). One-time setup with a funded mainnet wallet:
-
-```bash
-cd packages/server
-TXLINE_WALLET=~/.config/solana/id.json pnpm txline:setup   # subscribe on-chain + activate API token
-pnpm txline:probe                                           # list World Cup fixtures, tail live streams
-pnpm txline:probe <fixtureId>                               # inspect one fixture's snapshots + messages
+```text
+packages/
+  shared/                 Fixture catalogue, events and socket contracts
+  server/
+    src/session.ts        Game rules, questions, scoring and winners
+    src/txline/           Historical and live TXODDS adapters
+    src/escrow.ts         Server-side Solana verification and settlement
+  web/                    Next.js interface and wallet integration
+programs/
+  matchpot_escrow/        Reusable Anchor escrow program
+scripts/                  Reproducible Anchor build and deployment helpers
+render.yaml               Hosted Socket.IO service definition
 ```
 
-There is one startup command. The fixture selected in the UI determines the feed automatically:
+## Verification
 
 ```bash
-pnpm dev  # historical selections replay; upcoming selections wait, then use live streams
+pnpm typecheck
+pnpm --filter @matchpot/web build
 ```
 
-The host chooses a curated fixture before creating the session. The server stores that fixture in `SessionState`; for a finished match it pulls the recorded soccer feed (`/scores/historical/{fixtureId}`), samples its real in-running odds, and replays it at demo speed. An upcoming fixture remains locked until its scheduled kickoff and then connects to the fixture's live streams. Team identity is represented internally as `HOME` and `AWAY`, so scoring and UI are not tied to specific countries. The curated catalogue lives in `DEMO_FIXTURES` in `packages/shared/src/index.ts`; an API-driven live catalogue can replace it without changing the session model.
+## Current scope and next steps
 
-Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), and `MS_PER_MINUTE` (historical replay speed).
+MatchPot is a hackathon demo, not a mainnet wagering product. Current sessions are held in memory and are lost if the game server restarts or redeploys. The strongest next steps are:
 
-**Before demoing live:** run the probe during the match to confirm the stream is healthy. `txline/feed.ts` detects goals from documented participant score totals, maps the same card/corner actions verified against historical data, and derives next-goal prices from a dedicated market when present (falling back to normalized in-running 1X2 prices).
+1. Persist sessions, predictions and settlement jobs in Postgres or Redis.
+2. Replace application-authorized settlement with oracle-signed or threshold-authorized results.
+3. Populate fixtures dynamically from the TXODDS catalogue.
+4. Generalize the lobby beyond two players and add persistent profiles and leaderboards.
+5. Add automated integration tests for complete feed-to-payout flows.
 
-## Roadmap
+---
 
-- **Oracle-authorized settlement** — the demo automatically settles using an application-server signer. Replace it with signed oracle results or threshold signers before using real mainnet SOL.
-- **Supabase** — auth/profiles, match history, and persistent leaderboards once the live loop is solid.
-- **More question types** — next scorer by player, over/under, will there be a goal before 60', etc. The question/result plumbing is generic enough to extend.
-- **More than two players** — bump `MAX_PLAYERS` in `session.ts`; the UI lobby is the only 2-player-specific piece.
+Built with TXODDS, Solana and far too much stoppage-time optimism.
