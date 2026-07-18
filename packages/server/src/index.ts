@@ -31,7 +31,13 @@ const refunding = new Set<string>();
 
 function maybeSettle(session: Session) {
   const state = session.toState();
-  if (state.status !== "finished" || state.payoutSignature || settling.has(state.escrowId)) return;
+  if (
+    state.mode === "practice" ||
+    state.status !== "finished" ||
+    state.payoutSignature ||
+    settling.has(state.escrowId)
+  )
+    return;
 
   settling.add(state.escrowId);
   void settleFinishedEscrow(state)
@@ -74,11 +80,12 @@ const store = new SessionStore((session: Session) => {
 });
 
 io.on("connection", (socket) => {
-  socket.on("session:create", ({ name, wallet, fixtureId }, cb) => {
-    const session = store.create(fixtureId);
+  socket.on("session:create", ({ name, wallet, fixtureId, mode }, cb) => {
+    const session = store.create(fixtureId, mode);
     if (!session) return cb({ ok: false, error: "Choose one of the available matches." });
     const result = session.join(name, wallet);
     if (!result.ok) return cb(result);
+    if (mode === "practice") session.addBot();
     socket.data.code = session.code;
     socket.data.playerId = result.playerId;
     socket.join(session.code);
@@ -102,6 +109,7 @@ io.on("connection", (socket) => {
       return cb({ ok: false, error: "Join a session first." });
     const startReservation = session.beginStart(socket.data.playerId);
     if (!startReservation.ok) return cb(startReservation);
+    if (session.mode === "practice") return cb(session.start(socket.data.playerId));
     const escrowError = await verifyEscrowReady(session.toState());
     if (escrowError) {
       session.abortStart();

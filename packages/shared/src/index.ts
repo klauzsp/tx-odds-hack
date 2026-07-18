@@ -92,6 +92,7 @@ export type FeedEvent =
   | { kind: "SCORE_SNAPSHOT"; minute: number; score: Record<TeamCode, number> };
 
 export type SessionStatus = "lobby" | "live" | "finished" | "expired";
+export type SessionMode = "competitive" | "practice";
 
 export interface PlayerPublic {
   id: string;
@@ -100,6 +101,7 @@ export interface PlayerPublic {
   wallet: string;
   score: number;
   connected: boolean;
+  isBot: boolean;
 }
 
 export type QuestionType = "NEXT_GOAL" | "NEXT_CARD" | "NEXT_CORNER";
@@ -141,6 +143,7 @@ export interface QuestionResult {
 
 export interface SessionState {
   code: string;
+  mode: SessionMode;
   fixture: GameFixture;
   /** Unique 32-byte hex identifier used as the escrow PDA seed. */
   escrowId: string;
@@ -159,6 +162,8 @@ export interface SessionState {
   /** All resolved/voided questions, oldest first. */
   results: QuestionResult[];
   winners: string[] | null;
+  /** True when every player finished on zero points and all entries are returned. */
+  noContest: boolean;
   /** Devnet transaction signature after the application settles the escrow. */
   payoutSignature: string | null;
   /** True once an expired session has been checked and any deposits returned. */
@@ -179,7 +184,7 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   "session:create": (
-    payload: { name: string; wallet: string; fixtureId: number },
+    payload: { name: string; wallet: string; fixtureId: number; mode: SessionMode },
     cb: (ack: JoinAck) => void,
   ) => void;
   "session:join": (

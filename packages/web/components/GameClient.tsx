@@ -33,10 +33,11 @@ export default function GameClient() {
   const [error, setError] = useState<string | null>(null);
   const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
-  const [sessionAction, setSessionAction] = useState<"create" | "join" | null>(null);
+  const [sessionAction, setSessionAction] = useState<"create" | "practice" | "join" | null>(null);
   const [startBusy, setStartBusy] = useState(false);
   const joinedRef = useRef<{ code: string; name: string; wallet: string } | null>(null);
   const startTimeoutRef = useRef<number | null>(null);
+  const guestIdentityRef = useRef(`guest:${crypto.randomUUID()}`);
 
   useEffect(() => {
     const socket = getSocket();
@@ -65,7 +66,7 @@ export default function GameClient() {
   }, []);
 
   useEffect(() => {
-    if (!state?.escrowId || !wallet) return;
+    if (!state?.escrowId || !wallet || state.mode === "practice") return;
     let active = true;
     let timer: number | null = null;
     let openingTimer: number | null = null;
@@ -129,28 +130,30 @@ export default function GameClient() {
     }
   };
 
-  const create = () => {
-    if (!wallet) return setError("Connect your Phantom wallet first.");
+  const create = (mode: "competitive" | "practice") => {
+    if (mode === "competitive" && !wallet)
+      return setError("Connect your Phantom wallet first.");
     const socket = getSocket();
     if (!socket.connected) {
       socket.connect();
       return setError("Cannot reach the MatchPot game server on port 3001. Restart with pnpm dev.");
     }
     setError(null);
-    setSessionAction("create");
+    setSessionAction(mode === "practice" ? "practice" : "create");
     const timeout = window.setTimeout(() => {
       setSessionAction(null);
       setError("Creating the session is taking too long. Check the game server and try again.");
     }, 8_000);
-    const walletAddress = wallet.publicKey.toBase58();
-    socket.emit("session:create", { name, wallet: walletAddress, fixtureId }, (ack) => {
+    const identity =
+      mode === "practice" ? guestIdentityRef.current : wallet!.publicKey.toBase58();
+    socket.emit("session:create", { name, wallet: identity, fixtureId, mode }, (ack) => {
       window.clearTimeout(timeout);
       setSessionAction(null);
       if (!ack.ok) return setError(ack.error);
-      joinedRef.current = { code: ack.code, name, wallet: walletAddress };
+      joinedRef.current = { code: ack.code, name, wallet: identity };
       setPlayerId(ack.playerId);
       setState(ack.state);
-      if (ack.state.fixture.status === "historical") {
+      if (ack.state.mode === "competitive" && ack.state.fixture.status === "historical") {
         void fundPrizePool(ack.state, ack.playerId);
       }
     });
@@ -236,7 +239,8 @@ export default function GameClient() {
         setCodeInput={setCodeInput}
         fixtureId={fixtureId}
         setFixtureId={setFixtureId}
-        onCreate={create}
+        onCreateCompetitive={() => create("competitive")}
+        onCreatePractice={() => create("practice")}
         onJoin={join}
         walletConnected={Boolean(wallet)}
         chainBusy={chainBusy}
@@ -322,11 +326,12 @@ function HomeScreen(props: {
   setCodeInput: (v: string) => void;
   fixtureId: number;
   setFixtureId: (v: number) => void;
-  onCreate: () => void;
+  onCreateCompetitive: () => void;
+  onCreatePractice: () => void;
   onJoin: () => void;
   walletConnected: boolean;
   chainBusy: boolean;
-  sessionAction: "create" | "join" | null;
+  sessionAction: "create" | "practice" | "join" | null;
   error: string | null;
 }) {
   const now = useCurrentTime();
@@ -403,7 +408,7 @@ function HomeScreen(props: {
 
         <button
           className="btn primary"
-          onClick={props.onCreate}
+          onClick={props.onCreateCompetitive}
           disabled={
             !props.name.trim() ||
             !props.walletConnected ||
@@ -422,6 +427,29 @@ function HomeScreen(props: {
               ? "Create pending session · no deposit yet"
               : "Create a session · 0.1 SOL"}
         </button>
+
+        {selectedFixture.status === "historical" && (
+          <>
+            <div className="divider">or play instantly</div>
+            <button
+              className="btn practiceBtn"
+              onClick={props.onCreatePractice}
+              disabled={!props.name.trim() || props.sessionAction !== null}
+            >
+              {props.sessionAction === "practice" ? (
+                <span className="btnLoading">
+                  <span className="loadingSpinner" aria-hidden="true" />
+                  Starting practice…
+                </span>
+              ) : (
+                "Practice free vs MatchBot"
+              )}
+            </button>
+            <p className="muted small practiceNote">
+              No wallet or SOL required · no prize payout
+            </p>
+          </>
+        )}
 
         <div className="divider">or join a friend</div>
 
@@ -477,9 +505,9 @@ function LobbyScreen(props: {
   const isHost = playerId === state.hostId;
   const me = state.players.find((player) => player.id === playerId);
   const deposited = Boolean(me && props.escrow?.depositors.includes(me.wallet));
-  const allDeposited = state.players.every((player) =>
-    props.escrow?.depositors.includes(player.wallet),
-  );
+  const allDeposited =
+    state.mode === "practice" ||
+    state.players.every((player) => props.escrow?.depositors.includes(player.wallet));
   const waitingForKickoff = Boolean(
     state.fixture.status === "upcoming" &&
       state.fixture.startsAt &&
@@ -493,23 +521,33 @@ function LobbyScreen(props: {
   return (
     <main className="shell">
       <div className="card lobby">
-        <p className="lobbyLabel">Session code</p>
-        <div className="sessionCodeRow">
-          <p className="sessionCode">{state.code}</p>
-          <button
-            className="copyCodeBtn"
-            type="button"
-            onClick={() => {
-              void navigator.clipboard.writeText(state.code).then(() => {
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 1_500);
-              });
-            }}
-          >
-            {copied ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
-        <p className="muted">Share this code with your friend</p>
+        {state.mode === "practice" ? (
+          <>
+            <p className="lobbyLabel">Free practice</p>
+            <h2>You vs MatchBot</h2>
+            <p className="muted">Same predictions and scoring, with no SOL prize.</p>
+          </>
+        ) : (
+          <>
+            <p className="lobbyLabel">Session code</p>
+            <div className="sessionCodeRow">
+              <p className="sessionCode">{state.code}</p>
+              <button
+                className="copyCodeBtn"
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(state.code).then(() => {
+                    setCopied(true);
+                    window.setTimeout(() => setCopied(false), 1_500);
+                  });
+                }}
+              >
+                {copied ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+            <p className="muted">Share this code with your friend</p>
+          </>
+        )}
 
         <div className="slots">
           {[0, 1].map((i) => {
@@ -519,7 +557,11 @@ function LobbyScreen(props: {
                 {player ? (
                   <>
                     <span className="slotName">{player.name}</span>
-                    {player.id === state.hostId && <span className="hostTag">host</span>}
+                    {player.isBot ? (
+                      <span className="hostTag">bot</span>
+                    ) : player.id === state.hostId ? (
+                      <span className="hostTag">host</span>
+                    ) : null}
                   </>
                 ) : (
                   <span className="muted">Waiting…</span>
@@ -544,23 +586,25 @@ function LobbyScreen(props: {
             : upcomingFixtureLabel(state.fixture, now)}
         </p>
 
-        <div className="escrowPanel">
-          <div>
-            <span className="escrowLabel">Prize pool · Solana devnet</span>
-            <strong>
-              {((props.escrow?.prizePoolLamports ?? 0) / 1_000_000_000).toFixed(2)} SOL
-            </strong>
+        {state.mode === "competitive" && (
+          <div className="escrowPanel">
+            <div>
+              <span className="escrowLabel">Prize pool · Solana devnet</span>
+              <strong>
+                {((props.escrow?.prizePoolLamports ?? 0) / 1_000_000_000).toFixed(2)} SOL
+              </strong>
+            </div>
+            <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
+              {deposited
+                ? "Your entry is funded ✓"
+                : entryOpen
+                  ? "Entry not funded"
+                  : `Deposits open ${formatTimeUntil(entryOpensAt, now)}`}
+            </span>
           </div>
-          <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
-            {deposited
-              ? "Your entry is funded ✓"
-              : entryOpen
-                ? "Entry not funded"
-                : `Deposits open ${formatTimeUntil(entryOpensAt, now)}`}
-          </span>
-        </div>
+        )}
 
-        {!deposited && (
+        {state.mode === "competitive" && !deposited && (
           <button
             className="btn"
             onClick={props.onDeposit}
@@ -588,7 +632,9 @@ function LobbyScreen(props: {
             {props.startBusy ? (
               <span className="btnLoading">
                 <span className="loadingSpinner" aria-hidden="true" />
-                Locking prize pool &amp; kicking off…
+                {state.mode === "practice"
+                  ? "Starting replay…"
+                  : "Locking prize pool & kicking off…"}
               </span>
             ) : ready
               ? "Kick off ⚽"
@@ -853,7 +899,13 @@ function MatchScreen(props: {
                   </li>
                 ))}
             </ul>
-            {me && <p className="muted small">Points pay out at TXODDS live odds.</p>}
+            {me && (
+              <p className="muted small">
+                {state.mode === "practice"
+                  ? "Practice scoring uses the same TXODDS-powered odds."
+                  : "Points pay out at TXODDS live odds."}
+              </p>
+            )}
           </div>
 
           <div className="card feedCard">
@@ -900,26 +952,44 @@ function FinalCard({
     .map((p) => p.name);
   const iWon = winners.includes(playerId);
   const tie = winners.length > 1;
+  const noContest = state.noContest;
+  const practice = state.mode === "practice";
   const settled = state.results.filter((r) => r.team !== null);
   const correctCount = (pid: string) =>
     settled.filter((r) => r.entries.some((e) => e.playerId === pid && e.points > 0)).length;
 
   return (
     <div className="card finalCard">
-      <p className="trophy">🏆</p>
+      <p className="trophy">{practice ? "🎮" : "🏆"}</p>
       <h2>
-        {tie
-          ? `It's a tie: ${winnerNames.join(" & ")}`
-          : `${winnerNames[0]} wins the pot!`}
+        {practice && noContest
+          ? "Practice draw — no points"
+          : practice
+            ? tie
+              ? `It's a draw: ${winnerNames.join(" & ")}`
+              : `${winnerNames[0]} wins!`
+            : noContest
+              ? "No points — entries refunded"
+              : tie
+                ? `It's a tie: ${winnerNames.join(" & ")}`
+                : `${winnerNames[0]} wins the pot!`}
       </h2>
       <p className="muted">
-        {iWon && !tie ? "The SOL prize pot is yours." : tie ? "Pot splits down the middle." : "Better luck next match."}
+        {practice
+          ? "Practice complete — no SOL was deposited or paid out."
+          : noContest
+            ? "Nobody scored, so every player receives their original SOL entry back."
+            : iWon && !tie
+              ? "The SOL prize pot is yours."
+              : tie
+                ? "Pot splits down the middle."
+                : "Better luck next match."}
       </p>
       <ul className="scoreList final">
         {[...state.players]
           .sort((a, b) => b.score - a.score)
           .map((p) => (
-            <li key={p.id} className={winners.includes(p.id) ? "me" : ""}>
+            <li key={p.id} className={!noContest && winners.includes(p.id) ? "me" : ""}>
               <span>
                 {p.name}{" "}
                 <span className="muted small">
@@ -930,18 +1000,20 @@ function FinalCard({
             </li>
           ))}
       </ul>
-      {state.payoutSignature ? (
+      {practice ? (
+        <p className="muted small">Free practice game · no SOL prize</p>
+      ) : state.payoutSignature ? (
         <a
           className="explorerLink"
           href={`https://explorer.solana.com/tx/${state.payoutSignature}?cluster=devnet`}
           target="_blank"
           rel="noreferrer"
         >
-          Prize paid on Solana ↗
+          {noContest ? "Entries refunded on Solana ↗" : "Prize paid on Solana ↗"}
         </a>
       ) : (
         <p className="muted small">
-          Application payout in progress
+          {noContest ? "Application refund in progress" : "Application payout in progress"}
           {escrow
             ? ` · ${(escrow.prizePoolLamports / 1_000_000_000).toFixed(2)} SOL`
             : "…"}

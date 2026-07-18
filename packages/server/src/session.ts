@@ -9,6 +9,7 @@ import type {
   QuestionResult,
   QuestionType,
   SessionState,
+  SessionMode,
   SessionStatus,
   TeamCode,
 } from "@matchpot/shared";
@@ -75,6 +76,7 @@ interface PlayerInternal {
   wallet: string;
   score: number;
   connected: boolean;
+  isBot: boolean;
 }
 
 interface Prediction {
@@ -108,6 +110,7 @@ export class Session {
   private predictions = new Map<string, Map<string, Prediction>>();
   private results: QuestionResult[] = [];
   private winners: string[] | null = null;
+  private noContest = false;
   private payoutSignature: string | null = null;
   private refundComplete = false;
   private refundSignature: string | null = null;
@@ -122,6 +125,7 @@ export class Session {
     readonly code: string,
     readonly escrowId: string,
     readonly fixture: GameFixture,
+    readonly mode: SessionMode,
     private readonly notify: (session: Session) => void,
   ) {
     if (fixture.status === "upcoming" && fixture.startsAt) {
@@ -132,7 +136,10 @@ export class Session {
   join(rawName: string, wallet: string): JoinResult {
     const name = rawName.trim();
     if (!name) return { ok: false, error: "Enter a name first." };
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet))
+    if (
+      !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet) &&
+      !(this.mode === "practice" && wallet.startsWith("guest:"))
+    )
       return { ok: false, error: "Connect a valid Solana wallet first." };
 
     // Wallet ownership reclaims a seat; names alone are not safe identity once
@@ -152,10 +159,24 @@ export class Session {
       return { ok: false, error: `Session is full (${MAX_PLAYERS} players).` };
 
     const id = randomUUID();
-    this.players.set(id, { id, name, wallet, score: 0, connected: true });
+    this.players.set(id, { id, name, wallet, score: 0, connected: true, isBot: false });
     if (this.players.size === 1) this.hostId = id;
     this.notify(this);
     return { ok: true, playerId: id };
+  }
+
+  addBot() {
+    if (this.mode !== "practice" || this.players.size !== 1) return;
+    const id = `bot:${this.code}`;
+    this.players.set(id, {
+      id,
+      name: "MatchBot",
+      wallet: id,
+      score: 0,
+      connected: true,
+      isBot: true,
+    });
+    this.notify(this);
   }
 
   start(playerId: string): ActionResult {
@@ -346,6 +367,22 @@ export class Session {
     };
     this.predictions.set(id, new Map());
     this.nextOpenMinute = minute + QUESTION_GAP();
+    this.scheduleBotPick(id);
+  }
+
+  private scheduleBotPick(questionId: string) {
+    if (this.mode !== "practice" || Math.random() < 0.12) return;
+    const bot = [...this.players.values()].find((player) => player.isBot);
+    if (!bot) return;
+    const delay = 700 + Math.floor(Math.random() * 1_800);
+    setTimeout(() => {
+      if (this.status !== "live" || this.active?.id !== questionId) return;
+      const homeWeight = 1 / this.odds.HOME;
+      const awayWeight = 1 / this.odds.AWAY;
+      const team: TeamCode =
+        Math.random() < homeWeight / (homeWeight + awayWeight) ? "HOME" : "AWAY";
+      this.submitPrediction(bot.id, questionId, team);
+    }, delay);
   }
 
   /** Settle every open question (active + pending) that this event answers. */
@@ -408,6 +445,7 @@ export class Session {
   private finish() {
     this.status = "finished";
     const topScore = Math.max(...[...this.players.values()].map((p) => p.score));
+    this.noContest = topScore === 0;
     this.winners = [...this.players.values()]
       .filter((p) => p.score === topScore)
       .map((p) => p.id);
@@ -427,6 +465,7 @@ export class Session {
     }));
     return {
       code: this.code,
+      mode: this.mode,
       fixture: this.fixture,
       escrowId: this.escrowId,
       status: this.status,
@@ -447,6 +486,7 @@ export class Session {
       lastResult: this.results.length > 0 ? this.results[this.results.length - 1] : null,
       results: [...this.results],
       winners: this.winners,
+      noContest: this.noContest,
       payoutSignature: this.payoutSignature,
       refundComplete: this.refundComplete,
       refundSignature: this.refundSignature,
@@ -474,9 +514,9 @@ export class SessionStore {
 
   constructor(private readonly notify: (session: Session) => void) {}
 
-  create(fixtureId: number): Session | null {
+  create(fixtureId: number, mode: SessionMode): Session | null {
     const fixture = DEMO_FIXTURES.find((candidate) => candidate.id === fixtureId);
-    if (!fixture) return null;
+    if (!fixture || (mode === "practice" && fixture.status !== "historical")) return null;
     let code: string;
     do {
       code = Array.from(
@@ -486,7 +526,7 @@ export class SessionStore {
     } while (this.sessions.has(code));
     // The display code can eventually be reused; the escrow PDA seed cannot.
     const escrowId = randomBytes(32).toString("hex");
-    const session = new Session(code, escrowId, fixture, this.notify);
+    const session = new Session(code, escrowId, fixture, mode, this.notify);
     this.sessions.set(code, session);
     return session;
   }

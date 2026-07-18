@@ -225,6 +225,17 @@ select:focus {
   color: #04120a;
 }
 
+.btn.practiceBtn {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.practiceNote {
+  margin-top: -8px;
+  text-align: center;
+}
+
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;

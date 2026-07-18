@@ -4,6 +4,8 @@ Live prediction battles for the World Cup, built for the TXODDS hackathon (consu
 
 **Current build:** two players choose either a verified World Cup TxLINE replay or an upcoming live fixture. The demo catalogue contains four historical matches, France–England in the third-place play-off, and Spain–Argentina in the final. Upcoming matches show a live countdown and remain free pending lobbies; escrow deposits open 15 minutes before kickoff, and the match cannot start early. Sessions that remain unfunded five minutes after kickoff expire automatically, with any partial deposit refunded by the application. Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 12-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time.
 
+For an instant single-browser demo, choose a historical replay and select **Practice free vs MatchBot**. Practice uses the same feed, questions, and scoring engine, but requires no wallet or SOL and never creates an escrow. MatchBot answers after a short human-like delay, favours teams using the current odds, and occasionally misses a question.
+
 ## Run it
 
 ```bash
@@ -33,7 +35,7 @@ programs/
 
 Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a unique session account from its compatibility seed and that `escrowId`, so sessions never share a pot. Historical sessions initialize that PDA and collect entries immediately. Upcoming sessions remain free until their entry window opens; the host's first deposit initializes the PDA and the second player then funds it. The server verifies both wallets against the on-chain account before kickoff.
 
-At kickoff the application locks the funded escrow, permanently disabling host cancellation. At full time the server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Before kickoff the host can still cancel an abandoned lobby; the application can refund a partially funded upcoming session after its grace period.
+At kickoff the application locks the funded escrow, permanently disabling host cancellation. At full time the server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, and returns every player's entry when all scores are zero. It closes the settled account and returns account rent to the host. Before kickoff the host can still cancel an abandoned lobby; the application can refund a partially funded upcoming session after its grace period.
 
 Build and deploy it to devnet:
 

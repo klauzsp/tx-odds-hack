@@ -55,6 +55,8 @@ export async function verifyEscrowReady(state: SessionState): Promise<string | n
     const depositorCount = data.readUInt32LE(120);
     if (entryLamports !== ENTRY_LAMPORTS) return "The prize pool has the wrong entry fee.";
     if (data.length < 124 + depositorCount * 32) return "The depositor list is invalid.";
+    if (depositorCount !== state.players.length)
+      return "The prize pool contains an unexpected number of entries.";
 
     const depositors = new Set<string>();
     for (let index = 0; index < depositorCount; index += 1) {
