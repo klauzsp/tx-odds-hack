@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 declare_id!("Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET");
 
 #[program]
-pub mod nextgoal_escrow {
+pub mod matchpot_escrow {
     use super::*;
 
     /// Creates one escrow PDA for one off-chain game session.
@@ -21,6 +21,7 @@ pub mod nextgoal_escrow {
         escrow.entry_lamports = entry_lamports;
         escrow.prize_pool = 0;
         escrow.depositors = Vec::new();
+        escrow.locked = false;
         escrow.bump = ctx.bumps.escrow;
 
         emit!(SessionInitialized {
@@ -29,6 +30,18 @@ pub mod nextgoal_escrow {
             session_id,
             entry_lamports,
         });
+        Ok(())
+    }
+
+    /// Irreversibly locks a fully funded escrow when the application starts the match.
+    pub fn lock(ctx: Context<Lock>) -> Result<()> {
+        let escrow = &mut ctx.accounts.escrow;
+        if escrow.locked {
+            return Ok(());
+        }
+        require!(escrow.prize_pool > 0, EscrowError::EmptyPrizePool);
+        escrow.locked = true;
+        emit!(Locked { escrow: escrow.key() });
         Ok(())
     }
 
@@ -94,6 +107,7 @@ pub mod nextgoal_escrow {
         }
 
         let escrow = &mut ctx.accounts.escrow;
+        require!(escrow.locked, EscrowError::EscrowNotLocked);
         let pool = escrow.prize_pool;
         require!(pool > 0, EscrowError::EmptyPrizePool);
 
@@ -119,6 +133,7 @@ pub mod nextgoal_escrow {
     /// Cancels an unplayed session and refunds every recorded entry fee.
     pub fn cancel(ctx: Context<Cancel>) -> Result<()> {
         let escrow = &mut ctx.accounts.escrow;
+        require!(!escrow.locked, EscrowError::EscrowLocked);
         require!(
             escrow.depositors.len() == ctx.remaining_accounts.len(),
             EscrowError::DepositorAccountsMismatch
@@ -137,6 +152,34 @@ pub mod nextgoal_escrow {
         escrow.prize_pool = 0;
 
         emit!(Cancelled {
+            escrow: escrow.key(),
+            refunded: escrow.depositors.len() as u8,
+        });
+        Ok(())
+    }
+
+    /// Lets the application refund a scheduled match that expired before kickoff.
+    pub fn refund_unstarted(ctx: Context<RefundUnstarted>) -> Result<()> {
+        let escrow = &mut ctx.accounts.escrow;
+        require!(!escrow.locked, EscrowError::EscrowLocked);
+        require!(
+            escrow.depositors.len() == ctx.remaining_accounts.len(),
+            EscrowError::DepositorAccountsMismatch
+        );
+
+        let entry_lamports = escrow.entry_lamports;
+        for (index, depositor) in escrow.depositors.iter().enumerate() {
+            require_keys_eq!(
+                *depositor,
+                ctx.remaining_accounts[index].key(),
+                EscrowError::DepositorAccountsMismatch
+            );
+            **escrow.to_account_info().try_borrow_mut_lamports()? -= entry_lamports;
+            **ctx.remaining_accounts[index].try_borrow_mut_lamports()? += entry_lamports;
+        }
+        escrow.prize_pool = 0;
+
+        emit!(ExpiredRefunded {
             escrow: escrow.key(),
             refunded: escrow.depositors.len() as u8,
         });
@@ -174,6 +217,18 @@ pub struct Deposit<'info> {
 }
 
 #[derive(Accounts)]
+pub struct Lock<'info> {
+    pub settlement_authority: Signer<'info>,
+    #[account(
+        mut,
+        has_one = settlement_authority @ EscrowError::InvalidSettlementAuthority,
+        seeds = [ESCROW_SEED, escrow.session_id.as_ref()],
+        bump = escrow.bump
+    )]
+    pub escrow: Account<'info, SessionEscrow>,
+}
+
+#[derive(Accounts)]
 pub struct Settle<'info> {
     #[account(mut)]
     pub settlement_authority: Signer<'info>,
@@ -204,6 +259,23 @@ pub struct Cancel<'info> {
     pub escrow: Account<'info, SessionEscrow>,
 }
 
+#[derive(Accounts)]
+pub struct RefundUnstarted<'info> {
+    #[account(mut)]
+    pub settlement_authority: Signer<'info>,
+    /// CHECK: Rent recipient; constrained to the stored session authority.
+    #[account(mut, address = escrow.authority)]
+    pub authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        has_one = settlement_authority @ EscrowError::InvalidSettlementAuthority,
+        seeds = [ESCROW_SEED, escrow.session_id.as_ref()],
+        bump = escrow.bump,
+        close = authority
+    )]
+    pub escrow: Account<'info, SessionEscrow>,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct SessionEscrow {
@@ -214,6 +286,7 @@ pub struct SessionEscrow {
     pub prize_pool: u64,
     #[max_len(16)]
     pub depositors: Vec<Pubkey>,
+    pub locked: bool,
     pub bump: u8,
 }
 
@@ -240,6 +313,11 @@ pub struct Deposited {
 }
 
 #[event]
+pub struct Locked {
+    pub escrow: Pubkey,
+}
+
+#[event]
 pub struct Settled {
     pub escrow: Pubkey,
     pub winners: Vec<Pubkey>,
@@ -248,6 +326,12 @@ pub struct Settled {
 
 #[event]
 pub struct Cancelled {
+    pub escrow: Pubkey,
+    pub refunded: u8,
+}
+
+#[event]
+pub struct ExpiredRefunded {
     pub escrow: Pubkey,
     pub refunded: u8,
 }
@@ -276,6 +360,10 @@ pub enum EscrowError {
     Unauthorized,
     #[msg("Refund accounts do not match the session depositors")]
     DepositorAccountsMismatch,
-    #[msg("Only the NextGoal application can settle this session")]
+    #[msg("Only the MatchPot application can settle this session")]
     InvalidSettlementAuthority,
+    #[msg("The escrow must be locked before settlement")]
+    EscrowNotLocked,
+    #[msg("This escrow is locked and can no longer be cancelled or refunded")]
+    EscrowLocked,
 }

@@ -1,5 +1,5 @@
 import { io, type Socket } from "socket.io-client";
-import type { ClientToServerEvents, ServerToClientEvents } from "@nextgoal/shared";
+import type { ClientToServerEvents, ServerToClientEvents } from "@matchpot/shared";
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://localhost:3001";
 

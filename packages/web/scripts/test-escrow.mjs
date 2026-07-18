@@ -8,7 +8,7 @@ import {
   SystemProgram,
   Transaction,
 } from "@solana/web3.js";
-import idl from "../idl/nextgoal_escrow.json" with { type: "json" };
+import idl from "../idl/matchpot_escrow.json" with { type: "json" };
 
 const { AnchorProvider, BN, Program, Wallet } = anchor;
 
@@ -93,6 +93,31 @@ const settlementProvider = new AnchorProvider(
 );
 const settlementProgram = new Program(idl, settlementProvider);
 await settlementProgram.methods
+  .lock()
+  .accountsPartial({
+    settlementAuthority: settlementAuthority.publicKey,
+    escrow,
+  })
+  .rpc();
+const locked = await program.account.sessionEscrow.fetch(escrow);
+if (!locked.locked) throw new Error("Escrow was not locked at kickoff.");
+
+let lockedCancelFailed = false;
+try {
+  await program.methods
+    .cancel()
+    .accountsPartial({ authority: authority.publicKey, escrow })
+    .remainingAccounts([
+      { pubkey: authority.publicKey, isSigner: false, isWritable: true },
+      { pubkey: player.publicKey, isSigner: false, isWritable: true },
+    ])
+    .rpc();
+} catch {
+  lockedCancelFailed = true;
+}
+if (!lockedCancelFailed) throw new Error("Host cancelled an escrow after kickoff lock.");
+
+await settlementProgram.methods
   .settle([player.publicKey])
   .accountsPartial({
     settlementAuthority: settlementAuthority.publicKey,
@@ -152,4 +177,43 @@ if (playerAfterRefund - playerBeforeRefund !== entry) {
   throw new Error("Cancelled escrow did not refund the player entry.");
 }
 
-console.log("Escrow integration test passed: deposit, payout, close, and refund.");
+// Exercise application-authorized refund of a partially funded expired session.
+const expiredId = Array(32).fill(9);
+const expiredEscrow = escrowAddress(expiredId);
+const initializeExpired = await program.methods
+  .initializeSession(expiredId, new BN(entry))
+  .accountsPartial({
+    authority: authority.publicKey,
+    escrow: expiredEscrow,
+    systemProgram: SystemProgram.programId,
+  })
+  .instruction();
+const expiredHostDeposit = await program.methods
+  .deposit()
+  .accountsPartial({
+    depositor: authority.publicKey,
+    escrow: expiredEscrow,
+    systemProgram: SystemProgram.programId,
+  })
+  .instruction();
+await provider.sendAndConfirm(new Transaction().add(initializeExpired, expiredHostDeposit));
+
+const hostBeforeExpiredRefund = await connection.getBalance(authority.publicKey);
+await settlementProgram.methods
+  .refundUnstarted()
+  .accountsPartial({
+    settlementAuthority: settlementAuthority.publicKey,
+    authority: authority.publicKey,
+    escrow: expiredEscrow,
+  })
+  .remainingAccounts([{ pubkey: authority.publicKey, isSigner: false, isWritable: true }])
+  .rpc();
+const hostAfterExpiredRefund = await connection.getBalance(authority.publicKey);
+if (hostAfterExpiredRefund - hostBeforeExpiredRefund < entry) {
+  throw new Error("Expired escrow did not refund the complete partial deposit.");
+}
+if (await program.account.sessionEscrow.fetchNullable(expiredEscrow)) {
+  throw new Error("Expired escrow account was not closed.");
+}
+
+console.log("Escrow integration test passed: lock, payout, cancellation guard, and refunds.");

@@ -5,8 +5,8 @@ import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 export default function WalletHeader() {
   return (
     <header className="walletHeader">
-      <a className="brand" href="/" aria-label="NextGoal home">
-        Next<span>Goal</span>
+      <a className="brand" href="/" aria-label="MatchPot home">
+        Match<span>Pot</span>
       </a>
       <div className="walletControls">
         <span className="networkBadge">Solana devnet</span>

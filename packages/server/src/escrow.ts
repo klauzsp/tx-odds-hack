@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ENTRY_LAMPORTS, type SessionState } from "@nextgoal/shared";
+import { ENTRY_LAMPORTS, type SessionState } from "@matchpot/shared";
 import {
   clusterApiUrl,
   Connection,
@@ -16,6 +16,8 @@ const PROGRAM_ID = new PublicKey("Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET")
 const SETTLEMENT_AUTHORITY = new PublicKey("6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj");
 const ESCROW_DISCRIMINATOR = Buffer.from([251, 205, 39, 211, 38, 92, 234, 241]);
 const SETTLE_DISCRIMINATOR = Buffer.from([175, 42, 185, 87, 144, 131, 102, 212]);
+const LOCK_DISCRIMINATOR = Buffer.from([21, 19, 208, 43, 237, 62, 255, 87]);
+const REFUND_UNSTARTED_DISCRIMINATOR = Buffer.from([206, 105, 188, 221, 189, 205, 72, 30]);
 const connection = new Connection(
   process.env.SOLANA_RPC_URL ?? clusterApiUrl("devnet"),
   "confirmed",
@@ -82,17 +84,69 @@ function loadSettlementKeypair(): Keypair {
   return keypair;
 }
 
+function escrowAddress(escrowId: string): PublicKey {
+  const sessionId = Buffer.from(escrowId, "hex");
+  return PublicKey.findProgramAddressSync([Buffer.from("nextgoal"), sessionId], PROGRAM_ID)[0];
+}
+
+/** Locks cancellation before the off-chain match engine begins. */
+export async function lockEscrowForKickoff(state: SessionState): Promise<string> {
+  const settlementKeypair = loadSettlementKeypair();
+  const escrow = escrowAddress(state.escrowId);
+  const instruction = new TransactionInstruction({
+    programId: PROGRAM_ID,
+    data: LOCK_DISCRIMINATOR,
+    keys: [
+      { pubkey: settlementKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: escrow, isSigner: false, isWritable: true },
+    ],
+  });
+  return sendAndConfirmTransaction(connection, new Transaction().add(instruction), [
+    settlementKeypair,
+  ]);
+}
+
+/** Refunds all deposits in an expired, never-started session; null means no PDA existed. */
+export async function refundExpiredEscrow(state: SessionState): Promise<string | null> {
+  const settlementKeypair = loadSettlementKeypair();
+  const escrow = escrowAddress(state.escrowId);
+  const account = await connection.getAccountInfo(escrow, "confirmed");
+  if (!account) return null;
+  if (!account.owner.equals(PROGRAM_ID)) throw new Error("Expired escrow has an invalid owner.");
+
+  const data = account.data;
+  if (data.length < 124 || !data.subarray(0, 8).equals(ESCROW_DISCRIMINATOR))
+    throw new Error("Expired escrow data is invalid.");
+  const depositorCount = data.readUInt32LE(120);
+  if (data.length < 124 + depositorCount * 32)
+    throw new Error("Expired escrow depositor list is invalid.");
+  const depositors = Array.from({ length: depositorCount }, (_, index) => {
+    const offset = 124 + index * 32;
+    return new PublicKey(data.subarray(offset, offset + 32));
+  });
+  const authority = new PublicKey(data.subarray(40, 72));
+  const instruction = new TransactionInstruction({
+    programId: PROGRAM_ID,
+    data: REFUND_UNSTARTED_DISCRIMINATOR,
+    keys: [
+      { pubkey: settlementKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: authority, isSigner: false, isWritable: true },
+      { pubkey: escrow, isSigner: false, isWritable: true },
+      ...depositors.map((pubkey) => ({ pubkey, isSigner: false, isWritable: true })),
+    ],
+  });
+  return sendAndConfirmTransaction(connection, new Transaction().add(instruction), [
+    settlementKeypair,
+  ]);
+}
+
 /** Automatically pays the server-computed winner(s) using the application signer. */
 export async function settleFinishedEscrow(state: SessionState): Promise<string> {
   if (state.status !== "finished" || !state.winners?.length)
     throw new Error("Cannot settle a session before its winner is known.");
 
   const settlementKeypair = loadSettlementKeypair();
-  const sessionId = Buffer.from(state.escrowId, "hex");
-  const [escrow] = PublicKey.findProgramAddressSync(
-    [Buffer.from("nextgoal"), sessionId],
-    PROGRAM_ID,
-  );
+  const escrow = escrowAddress(state.escrowId);
   const authority = new PublicKey(
     state.players.find((player) => player.id === state.hostId)!.wallet,
   );

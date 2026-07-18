@@ -1,4 +1,4 @@
-import type { FeedEvent, GameFixture } from "@nextgoal/shared";
+import type { FeedEvent, GameFixture } from "@matchpot/shared";
 import { TxLineFeed } from "./txline/feed";
 import { TxLineHistoricalFeed } from "./txline/historicalFeed";
 

@@ -1,5 +1,5 @@
 {
-  "name": "nextgoal",
+  "name": "matchpot",
   "private": true,
   "scripts": {
     "anchor:build": "./scripts/anchor-build.sh",

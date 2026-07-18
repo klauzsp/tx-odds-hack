@@ -1,14 +1,19 @@
 import { createServer } from "node:http";
 import { Server } from "socket.io";
-import type { ClientToServerEvents, ServerToClientEvents } from "@nextgoal/shared";
+import type { ClientToServerEvents, ServerToClientEvents } from "@matchpot/shared";
 import { Session, SessionStore } from "./session";
-import { settleFinishedEscrow, verifyEscrowReady } from "./escrow";
+import {
+  lockEscrowForKickoff,
+  refundExpiredEscrow,
+  settleFinishedEscrow,
+  verifyEscrowReady,
+} from "./escrow";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { "content-type": "text/plain" });
-  res.end("NextGoal game server");
+  res.end("MatchPot game server");
 });
 
 interface SocketData {
@@ -22,6 +27,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string,
 );
 
 const settling = new Set<string>();
+const refunding = new Set<string>();
 
 function maybeSettle(session: Session) {
   const state = session.toState();
@@ -42,9 +48,29 @@ function maybeSettle(session: Session) {
     });
 }
 
+function maybeRefund(session: Session) {
+  const state = session.toState();
+  if (state.status !== "expired" || state.refundComplete || refunding.has(state.escrowId)) return;
+
+  refunding.add(state.escrowId);
+  void refundExpiredEscrow(state)
+    .then((signature) => {
+      if (signature) console.log(`💸 Refunded expired session ${state.code}: ${signature}`);
+      session.recordRefund(signature);
+    })
+    .catch((error) => {
+      console.error(`Expired escrow refund failed for ${state.code}:`, error);
+      setTimeout(() => {
+        refunding.delete(state.escrowId);
+        maybeRefund(session);
+      }, 5_000);
+    });
+}
+
 const store = new SessionStore((session: Session) => {
   io.to(session.code).emit("state", session.toState());
   maybeSettle(session);
+  maybeRefund(session);
 });
 
 io.on("connection", (socket) => {
@@ -74,11 +100,28 @@ io.on("connection", (socket) => {
     const session = socket.data.code ? store.get(socket.data.code) : undefined;
     if (!session || !socket.data.playerId)
       return cb({ ok: false, error: "Join a session first." });
-    const readinessError = session.startReadinessError(socket.data.playerId);
-    if (readinessError) return cb({ ok: false, error: readinessError });
+    const startReservation = session.beginStart(socket.data.playerId);
+    if (!startReservation.ok) return cb(startReservation);
     const escrowError = await verifyEscrowReady(session.toState());
-    if (escrowError) return cb({ ok: false, error: escrowError });
+    if (escrowError) {
+      session.abortStart();
+      return cb({ ok: false, error: escrowError });
+    }
+    try {
+      await lockEscrowForKickoff(session.toState());
+    } catch (error) {
+      console.error(`Could not lock escrow for ${session.code}:`, error);
+      session.abortStart();
+      return cb({ ok: false, error: "Could not lock the prize pool for kickoff. Try again." });
+    }
     cb(session.start(socket.data.playerId));
+  });
+
+  socket.on("session:leave", (cb) => {
+    if (socket.data.code) socket.leave(socket.data.code);
+    delete socket.data.code;
+    delete socket.data.playerId;
+    cb({ ok: true });
   });
 
   socket.on("prediction:submit", ({ questionId, team }, cb) => {
@@ -95,5 +138,5 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`⚽ NextGoal game server listening on http://localhost:${PORT}`);
+  console.log(`⚽ MatchPot game server listening on http://localhost:${PORT}`);
 });

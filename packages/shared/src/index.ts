@@ -70,8 +70,11 @@ export const ENTRY_LAMPORTS = 100_000_000;
 /** Upcoming sessions accept escrow deposits only during the final 15 minutes before kickoff. */
 export const ENTRY_WINDOW_MS = 15 * 60 * 1_000;
 
+/** An unfunded or partially funded upcoming session expires five minutes after kickoff. */
+export const KICKOFF_GRACE_MS = 5 * 60 * 1_000;
+
 /** Decimal odds for "which team scores the next goal". */
-export type NextGoalOdds = Record<TeamCode, number>;
+export type GoalOdds = Record<TeamCode, number>;
 
 export type MatchEvent =
   | { kind: "KICKOFF"; minute: number }
@@ -83,9 +86,12 @@ export type MatchEvent =
   | { kind: "FULL_TIME"; minute: number };
 
 /** Raw feed event — MatchEvents plus odds ticks (mirrors what a TXODDS live feed delivers). */
-export type FeedEvent = MatchEvent | { kind: "ODDS"; minute: number; nextGoal: NextGoalOdds };
+export type FeedEvent =
+  | MatchEvent
+  | { kind: "ODDS"; minute: number; goalOdds: GoalOdds }
+  | { kind: "SCORE_SNAPSHOT"; minute: number; score: Record<TeamCode, number> };
 
-export type SessionStatus = "lobby" | "live" | "finished";
+export type SessionStatus = "lobby" | "live" | "finished" | "expired";
 
 export interface PlayerPublic {
   id: string;
@@ -143,7 +149,7 @@ export interface SessionState {
   players: PlayerPublic[];
   minute: number;
   score: Record<TeamCode, number>;
-  odds: NextGoalOdds;
+  odds: GoalOdds;
   feed: MatchEvent[];
   question: ActiveQuestion | null;
   pendingQuestions: PendingQuestion[];
@@ -155,6 +161,10 @@ export interface SessionState {
   winners: string[] | null;
   /** Devnet transaction signature after the application settles the escrow. */
   payoutSignature: string | null;
+  /** True once an expired session has been checked and any deposits returned. */
+  refundComplete: boolean;
+  /** Devnet refund transaction, or null when the expired session held no deposits. */
+  refundSignature: string | null;
 }
 
 export type Ack = { ok: true } | { ok: false; error: string };
@@ -176,6 +186,7 @@ export interface ClientToServerEvents {
     payload: { code: string; name: string; wallet: string },
     cb: (ack: JoinAck) => void,
   ) => void;
+  "session:leave": (cb: (ack: Ack) => void) => void;
   "match:start": (cb: (ack: Ack) => void) => void;
   "prediction:submit": (
     payload: { questionId: string; team: TeamCode },

@@ -1,5 +1,5 @@
 {
-  "name": "@nextgoal/server",
+  "name": "@matchpot/server",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.32.1",
-    "@nextgoal/shared": "workspace:*",
+    "@matchpot/shared": "workspace:*",
     "@solana/spl-token": "^0.4.12",
     "@solana/web3.js": "^1.98.4",
     "eventsource": "^4.0.0",

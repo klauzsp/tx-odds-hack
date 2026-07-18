@@ -1,16 +1,10 @@
-/**
- * Program IDL in camelCase format in order to be used in JS/TS.
- *
- * Note that this is only a type helper and is not the actual IDL. The original
- * IDL can be found at `target/idl/nextgoal_escrow.json`.
- */
-export type NextgoalEscrow = {
+{
   "address": "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET",
   "metadata": {
-    "name": "nextgoalEscrow",
+    "name": "matchpot_escrow",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Per-session SOL prize pool escrow for NextGoal"
+    "description": "Per-session SOL prize pool escrow for MatchPot"
   },
   "instructions": [
     {
@@ -57,8 +51,8 @@ export type NextgoalEscrow = {
               },
               {
                 "kind": "account",
-                "path": "escrow.sessionId",
-                "account": "sessionEscrow"
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
               }
             ]
           }
@@ -107,21 +101,21 @@ export type NextgoalEscrow = {
               },
               {
                 "kind": "account",
-                "path": "escrow.sessionId",
-                "account": "sessionEscrow"
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
               }
             ]
           }
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
     },
     {
-      "name": "initializeSession",
+      "name": "initialize_session",
       "docs": [
         "Creates one escrow PDA for one off-chain game session."
       ],
@@ -161,19 +155,19 @@ export type NextgoalEscrow = {
               },
               {
                 "kind": "arg",
-                "path": "sessionId"
+                "path": "session_id"
               }
             ]
           }
         },
         {
-          "name": "systemProgram",
+          "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
         {
-          "name": "sessionId",
+          "name": "session_id",
           "type": {
             "array": [
               "u8",
@@ -182,30 +176,81 @@ export type NextgoalEscrow = {
           }
         },
         {
-          "name": "entryLamports",
+          "name": "entry_lamports",
           "type": "u64"
         }
       ]
     },
     {
-      "name": "settle",
+      "name": "lock",
       "docs": [
-        "Pays the complete pool to one winner, or divides it across tied winners.",
-        "The game authority supplies winner accounts in the same order as `winners`."
+        "Irreversibly locks a fully funded escrow when the application starts the match."
       ],
       "discriminator": [
-        175,
-        42,
-        185,
-        87,
-        144,
-        131,
-        102,
-        212
+        21,
+        19,
+        208,
+        43,
+        237,
+        62,
+        255,
+        87
       ],
       "accounts": [
         {
-          "name": "settlementAuthority",
+          "name": "settlement_authority",
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "refund_unstarted",
+      "docs": [
+        "Lets the application refund a scheduled match that expired before kickoff."
+      ],
+      "discriminator": [
+        206,
+        105,
+        188,
+        221,
+        189,
+        205,
+        72,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "settlement_authority",
           "writable": true,
           "signer": true,
           "relations": [
@@ -236,8 +281,66 @@ export type NextgoalEscrow = {
               },
               {
                 "kind": "account",
-                "path": "escrow.sessionId",
-                "account": "sessionEscrow"
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle",
+      "docs": [
+        "Pays the complete pool to one winner, or divides it across tied winners.",
+        "The game authority supplies winner accounts in the same order as `winners`."
+      ],
+      "discriminator": [
+        175,
+        42,
+        185,
+        87,
+        144,
+        131,
+        102,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "settlement_authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "escrow"
+          ]
+        },
+        {
+          "name": "authority",
+          "writable": true
+        },
+        {
+          "name": "escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  110,
+                  101,
+                  120,
+                  116,
+                  103,
+                  111,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "escrow.session_id",
+                "account": "SessionEscrow"
               }
             ]
           }
@@ -255,7 +358,7 @@ export type NextgoalEscrow = {
   ],
   "accounts": [
     {
-      "name": "sessionEscrow",
+      "name": "SessionEscrow",
       "discriminator": [
         251,
         205,
@@ -270,7 +373,7 @@ export type NextgoalEscrow = {
   ],
   "events": [
     {
-      "name": "cancelled",
+      "name": "Cancelled",
       "discriminator": [
         136,
         23,
@@ -283,7 +386,7 @@ export type NextgoalEscrow = {
       ]
     },
     {
-      "name": "deposited",
+      "name": "Deposited",
       "discriminator": [
         111,
         141,
@@ -296,7 +399,33 @@ export type NextgoalEscrow = {
       ]
     },
     {
-      "name": "sessionInitialized",
+      "name": "ExpiredRefunded",
+      "discriminator": [
+        140,
+        206,
+        186,
+        123,
+        21,
+        39,
+        39,
+        30
+      ]
+    },
+    {
+      "name": "Locked",
+      "discriminator": [
+        188,
+        53,
+        118,
+        62,
+        64,
+        12,
+        198,
+        84
+      ]
+    },
+    {
+      "name": "SessionInitialized",
       "discriminator": [
         22,
         195,
@@ -309,7 +438,7 @@ export type NextgoalEscrow = {
       ]
     },
     {
-      "name": "settled",
+      "name": "Settled",
       "discriminator": [
         232,
         210,
@@ -325,68 +454,78 @@ export type NextgoalEscrow = {
   "errors": [
     {
       "code": 6000,
-      "name": "invalidEntryAmount",
+      "name": "InvalidEntryAmount",
       "msg": "The entry fee must be greater than zero"
     },
     {
       "code": 6001,
-      "name": "alreadyDeposited",
+      "name": "AlreadyDeposited",
       "msg": "This wallet has already deposited into the session"
     },
     {
       "code": 6002,
-      "name": "sessionFull",
+      "name": "SessionFull",
       "msg": "The session has reached its depositor limit"
     },
     {
       "code": 6003,
-      "name": "arithmeticOverflow",
+      "name": "ArithmeticOverflow",
       "msg": "The prize pool arithmetic overflowed"
     },
     {
       "code": 6004,
-      "name": "noWinners",
+      "name": "NoWinners",
       "msg": "At least one winner is required"
     },
     {
       "code": 6005,
-      "name": "tooManyWinners",
+      "name": "TooManyWinners",
       "msg": "The winner list exceeds the supported limit"
     },
     {
       "code": 6006,
-      "name": "winnerAccountsMismatch",
+      "name": "WinnerAccountsMismatch",
       "msg": "Winner accounts do not match the declared winners"
     },
     {
       "code": 6007,
-      "name": "duplicateWinner",
+      "name": "DuplicateWinner",
       "msg": "A winner was supplied more than once"
     },
     {
       "code": 6008,
-      "name": "emptyPrizePool",
+      "name": "EmptyPrizePool",
       "msg": "The prize pool is empty"
     },
     {
       "code": 6009,
-      "name": "unauthorized",
+      "name": "Unauthorized",
       "msg": "Only the session authority can perform this action"
     },
     {
       "code": 6010,
-      "name": "depositorAccountsMismatch",
+      "name": "DepositorAccountsMismatch",
       "msg": "Refund accounts do not match the session depositors"
     },
     {
       "code": 6011,
-      "name": "invalidSettlementAuthority",
-      "msg": "Only the NextGoal application can settle this session"
+      "name": "InvalidSettlementAuthority",
+      "msg": "Only the MatchPot application can settle this session"
+    },
+    {
+      "code": 6012,
+      "name": "EscrowNotLocked",
+      "msg": "The escrow must be locked before settlement"
+    },
+    {
+      "code": 6013,
+      "name": "EscrowLocked",
+      "msg": "This escrow is locked and can no longer be cancelled or refunded"
     }
   ],
   "types": [
     {
-      "name": "cancelled",
+      "name": "Cancelled",
       "type": {
         "kind": "struct",
         "fields": [
@@ -402,7 +541,7 @@ export type NextgoalEscrow = {
       }
     },
     {
-      "name": "deposited",
+      "name": "Deposited",
       "type": {
         "kind": "struct",
         "fields": [
@@ -419,19 +558,47 @@ export type NextgoalEscrow = {
             "type": "u64"
           },
           {
-            "name": "prizePool",
+            "name": "prize_pool",
             "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "sessionEscrow",
+      "name": "ExpiredRefunded",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "sessionId",
+            "name": "escrow",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Locked",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "escrow",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionEscrow",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session_id",
             "type": {
               "array": [
                 "u8",
@@ -444,15 +611,15 @@ export type NextgoalEscrow = {
             "type": "pubkey"
           },
           {
-            "name": "settlementAuthority",
+            "name": "settlement_authority",
             "type": "pubkey"
           },
           {
-            "name": "entryLamports",
+            "name": "entry_lamports",
             "type": "u64"
           },
           {
-            "name": "prizePool",
+            "name": "prize_pool",
             "type": "u64"
           },
           {
@@ -462,6 +629,10 @@ export type NextgoalEscrow = {
             }
           },
           {
+            "name": "locked",
+            "type": "bool"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -469,7 +640,7 @@ export type NextgoalEscrow = {
       }
     },
     {
-      "name": "sessionInitialized",
+      "name": "SessionInitialized",
       "type": {
         "kind": "struct",
         "fields": [
@@ -482,7 +653,7 @@ export type NextgoalEscrow = {
             "type": "pubkey"
           },
           {
-            "name": "sessionId",
+            "name": "session_id",
             "type": {
               "array": [
                 "u8",
@@ -491,14 +662,14 @@ export type NextgoalEscrow = {
             }
           },
           {
-            "name": "entryLamports",
+            "name": "entry_lamports",
             "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "settled",
+      "name": "Settled",
       "type": {
         "kind": "struct",
         "fields": [
@@ -513,7 +684,7 @@ export type NextgoalEscrow = {
             }
           },
           {
-            "name": "prizePool",
+            "name": "prize_pool",
             "type": "u64"
           }
         ]
@@ -522,9 +693,9 @@ export type NextgoalEscrow = {
   ],
   "constants": [
     {
-      "name": "escrowSeed",
+      "name": "ESCROW_SEED",
       "type": "bytes",
       "value": "[110, 101, 120, 116, 103, 111, 97, 108]"
     }
   ]
-};
+}

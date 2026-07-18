@@ -13,7 +13,7 @@ importers:
       '@coral-xyz/anchor':
         specifier: 0.32.1
         version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
-      '@nextgoal/shared':
+      '@matchpot/shared':
         specifier: workspace:*
         version: link:../shared
       '@solana/spl-token':
@@ -53,7 +53,7 @@ importers:
       '@anchor-lang/core':
         specifier: ^1.1.2
         version: 1.1.2(bufferutil@4.1.0)(typescript@5.9.3)
-      '@nextgoal/shared':
+      '@matchpot/shared':
         specifier: workspace:*
         version: link:../shared
       '@solana/wallet-adapter-base':

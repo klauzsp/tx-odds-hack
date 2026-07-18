@@ -1,4 +1,4 @@
-import type { FeedEvent } from "@nextgoal/shared";
+import type { FeedEvent } from "@matchpot/shared";
 import type { FeedHandlers, MatchFeed } from "./feed";
 
 /** Replays a recorded feed in real time, one match minute per tick. */

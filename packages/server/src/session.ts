@@ -4,19 +4,19 @@ import type {
   GameFixture,
   FeedEvent,
   MatchEvent,
-  NextGoalOdds,
+  GoalOdds,
   PendingQuestion,
   QuestionResult,
   QuestionType,
   SessionState,
   SessionStatus,
   TeamCode,
-} from "@nextgoal/shared";
-import { DEMO_FIXTURES } from "@nextgoal/shared";
+} from "@matchpot/shared";
+import { DEMO_FIXTURES, KICKOFF_GRACE_MS } from "@matchpot/shared";
 import { createFeed, type MatchFeed } from "./feed";
 
 const MAX_PLAYERS = 2;
-const INITIAL_ODDS: NextGoalOdds = { HOME: 2.9, AWAY: 1.72 };
+const INITIAL_ODDS: GoalOdds = { HOME: 2.9, AWAY: 1.72 };
 /** Goal questions pay 100 × the TXODDS-derived odds at lock-in. */
 const BASE_POINTS = 100;
 /** Card/corner questions pay a flat rate (no TXODDS market for them yet). */
@@ -101,7 +101,7 @@ export class Session {
   private players = new Map<string, PlayerInternal>();
   private minute = 0;
   private score: Record<TeamCode, number> = { HOME: 0, AWAY: 0 };
-  private odds: NextGoalOdds = { ...INITIAL_ODDS };
+  private odds: GoalOdds = { ...INITIAL_ODDS };
   private feed: MatchEvent[] = [];
   private active: QuestionInternal | null = null;
   private pending: QuestionInternal[] = [];
@@ -109,7 +109,11 @@ export class Session {
   private results: QuestionResult[] = [];
   private winners: string[] | null = null;
   private payoutSignature: string | null = null;
+  private refundComplete = false;
+  private refundSignature: string | null = null;
   private matchFeed: MatchFeed | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private starting = false;
   private questionCount = 0;
   private nextOpenMinute = 0;
   private lastType: QuestionType | null = null;
@@ -119,7 +123,11 @@ export class Session {
     readonly escrowId: string,
     readonly fixture: GameFixture,
     private readonly notify: (session: Session) => void,
-  ) {}
+  ) {
+    if (fixture.status === "upcoming" && fixture.startsAt) {
+      this.scheduleExpiry();
+    }
+  }
 
   join(rawName: string, wallet: string): JoinResult {
     const name = rawName.trim();
@@ -151,17 +159,21 @@ export class Session {
   }
 
   start(playerId: string): ActionResult {
-    const readinessError = this.startReadinessError(playerId);
-    if (readinessError) return { ok: false, error: readinessError };
+    if (!this.starting || playerId !== this.hostId)
+      return { ok: false, error: "Kickoff was not prepared." };
 
     let feed: MatchFeed;
     try {
       feed = createFeed(this.fixture);
     } catch (err) {
+      this.abortStart();
       return { ok: false, error: err instanceof Error ? err.message : "Feed unavailable." };
     }
 
     this.status = "live";
+    this.starting = false;
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
     this.nextOpenMinute = FIRST_QUESTION_DELAY();
     this.matchFeed = feed;
     this.matchFeed.start({
@@ -172,6 +184,8 @@ export class Session {
   }
 
   startReadinessError(playerId: string): string | null {
+    if (this.starting) return "Kickoff is already being prepared.";
+    if (this.status === "expired") return "This session expired without enough deposits.";
     if (this.status !== "lobby") return "Match already started.";
     if (playerId !== this.hostId) return "Only the host can kick off.";
     if (this.players.size < MAX_PLAYERS) return "Waiting for your friend to join.";
@@ -183,6 +197,21 @@ export class Session {
       return `${this.fixture.home.name} vs ${this.fixture.away.name} starts ${formatTimeUntil(this.fixture.startsAt)}.`;
     }
     return null;
+  }
+
+  beginStart(playerId: string): ActionResult {
+    const readinessError = this.startReadinessError(playerId);
+    if (readinessError) return { ok: false, error: readinessError };
+    this.starting = true;
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
+    return { ok: true };
+  }
+
+  abortStart() {
+    if (!this.starting) return;
+    this.starting = false;
+    this.scheduleExpiry();
   }
 
   submitPrediction(playerId: string, questionId: string, team: TeamCode): ActionResult {
@@ -206,12 +235,37 @@ export class Session {
 
   stop() {
     this.matchFeed?.stop();
+    if (this.expiryTimer) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
   }
 
   recordPayout(signature: string) {
     if (this.status !== "finished" || this.payoutSignature) return;
     this.payoutSignature = signature;
     this.notify(this);
+  }
+
+  recordRefund(signature: string | null) {
+    if (this.status !== "expired" || this.refundComplete) return;
+    this.refundComplete = true;
+    this.refundSignature = signature;
+    this.notify(this);
+  }
+
+  private expireUnstarted() {
+    if (this.status !== "lobby" || this.starting) return;
+    this.status = "expired";
+    this.expiryTimer = null;
+    this.notify(this);
+  }
+
+  private scheduleExpiry() {
+    if (this.status !== "lobby" || this.fixture.status !== "upcoming" || !this.fixture.startsAt)
+      return;
+    const remaining = this.fixture.startsAt + KICKOFF_GRACE_MS - Date.now();
+    if (remaining <= 0) return this.expireUnstarted();
+    // JavaScript timers clamp larger delays; reschedule distant fixtures in chunks.
+    this.expiryTimer = setTimeout(() => this.scheduleExpiry(), Math.min(remaining, 2_147_000_000));
   }
 
   // ---- match loop -------------------------------------------------------
@@ -237,7 +291,10 @@ export class Session {
   private handleFeedEvent(event: FeedEvent) {
     switch (event.kind) {
       case "ODDS":
-        this.odds = event.nextGoal;
+        this.odds = event.goalOdds;
+        break;
+      case "SCORE_SNAPSHOT":
+        this.score = { ...event.score };
         break;
       case "GOAL":
         this.score[event.team] += 1;
@@ -388,6 +445,8 @@ export class Session {
       results: [...this.results],
       winners: this.winners,
       payoutSignature: this.payoutSignature,
+      refundComplete: this.refundComplete,
+      refundSignature: this.refundSignature,
     };
   }
 }

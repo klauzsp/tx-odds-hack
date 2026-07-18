@@ -1,8 +1,8 @@
-# NextGoal ⚽
+# MatchPot ⚽
 
 Live prediction battles for the World Cup, built for the TXODDS hackathon (consumer & fan experiences track). Friends join a session, get prompted with prediction questions during the match, and the player with the most points at full time takes the SOL prize pot.
 
-**Current build:** two players choose either a verified World Cup TxLINE replay or an upcoming live fixture. The demo catalogue contains four historical matches, France–England in the third-place play-off, and Spain–Argentina in the final. Upcoming matches show a live countdown and remain free pending lobbies; escrow deposits open 15 minutes before kickoff, and the match cannot start early. Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 5-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time.
+**Current build:** two players choose either a verified World Cup TxLINE replay or an upcoming live fixture. The demo catalogue contains four historical matches, France–England in the third-place play-off, and Spain–Argentina in the final. Upcoming matches show a live countdown and remain free pending lobbies; escrow deposits open 15 minutes before kickoff, and the match cannot start early. Sessions that remain unfunded five minutes after kickoff expire automatically, with any partial deposit refunded by the application. Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 12-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time.
 
 ## Run it
 
@@ -21,7 +21,7 @@ packages/
   server/   Socket.IO game server — sessions, match engine, scoring (in-memory)
   web/      Next.js app — join/lobby/live match/full-time screens
 programs/
-  nextgoal_escrow/  Anchor program — one SOL escrow PDA per game session
+  matchpot_escrow/  Anchor program — one SOL escrow PDA per game session
 ```
 
 - **`server/src/feed.ts`** — feed abstraction. Every session owns its selected fixture and feed instance; completed fixtures replay their historical data and upcoming fixtures consume live SSE streams after kickoff.
@@ -31,9 +31,9 @@ programs/
 
 ## SOL prize-pool escrow
 
-Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a session account from `["nextgoal", escrowId]`, so sessions never share a pot. Creating a game initializes that PDA and deposits the host's 0.1 devnet SOL entry; joining deposits the second entry. The server verifies both wallets against the on-chain account before kickoff.
+Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a unique session account from its compatibility seed and that `escrowId`, so sessions never share a pot. Historical sessions initialize that PDA and collect entries immediately. Upcoming sessions remain free until their entry window opens; the host's first deposit initializes the PDA and the second player then funds it. The server verifies both wallets against the on-chain account before kickoff.
 
-At full time the application server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Its `cancel` instruction lets the host refund every recorded depositor if a lobby is abandoned.
+At kickoff the application locks the funded escrow, permanently disabling host cancellation. At full time the server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Before kickoff the host can still cancel an abandoned lobby; the application can refund a partially funded upcoming session after its grace period.
 
 Build and deploy it to devnet:
 
@@ -42,7 +42,7 @@ pnpm anchor:build
 pnpm anchor:deploy:devnet
 ```
 
-The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. The canonical program keypair is `_keys/nextgoal_escrow-program-keypair.json`; the build script restores it into the disposable `target/` directory before every build. The funded devnet deployer and upgrade authority is `_keys/devnet-test.json` (`CWgRwTdXuxsL4P8TayCyREcfgjzZU4UC7bLZeopNJN5r`). Both are intentionally gitignored: keep an encrypted off-machine backup of `_keys/` and never commit or share its contents.
+The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. The canonical program keypair is `_keys/matchpot_escrow-program-keypair.json`; the build script restores it into the disposable `target/` directory before every build. The funded devnet deployer and upgrade authority is `_keys/devnet-test.json` (`CWgRwTdXuxsL4P8TayCyREcfgjzZU4UC7bLZeopNJN5r`). Both are intentionally gitignored: keep an encrypted off-machine backup of `_keys/` and never commit or share its contents.
 
 Initial deployment locks rent in the durable program account. Later upgrades reuse the same program and normally cost only transaction fees (plus a temporary deployment buffer), so the deployer should not need repeated large faucet top-ups. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
 
@@ -53,8 +53,8 @@ For a local money-flow test, start a validator with the compiled program and run
 ```bash
 solana-test-validator --reset \
   --bpf-program Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET \
-  target/deploy/nextgoal_escrow.so
-pnpm --filter @nextgoal/web test:escrow
+  target/deploy/matchpot_escrow.so
+pnpm --filter @matchpot/web test:escrow
 ```
 
 ## Live TxLINE data (World Cup free tier)
@@ -78,12 +78,11 @@ The host chooses a curated fixture before creating the session. The server store
 
 Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), and `MS_PER_MINUTE` (historical replay speed).
 
-**Before demoing live:** the docs don't publish full stream payload examples, so `txline/feed.ts` parses defensively (goals are detected from documented stat keys 1/2 = participant total goals). Run the probe during any live match and tighten the field mapping — especially the next-goal odds market, which is currently logged but not yet mapped (`onOdds` TODO).
+**Before demoing live:** run the probe during the match to confirm the stream is healthy. `txline/feed.ts` detects goals from documented participant score totals, maps the same card/corner actions verified against historical data, and derives next-goal prices from a dedicated market when present (falling back to normalized in-running 1X2 prices).
 
 ## Roadmap
 
 - **Oracle-authorized settlement** — the demo automatically settles using an application-server signer. Replace it with signed oracle results or threshold signers before using real mainnet SOL.
-- **Next-goal odds from TxLINE** — map the real odds market in `txline/feed.ts` `onOdds` so live odds drive the payout multiplier.
 - **Supabase** — auth/profiles, match history, and persistent leaderboards once the live loop is solid.
 - **More question types** — next scorer by player, over/under, will there be a goal before 60', etc. The question/result plumbing is generic enough to extend.
 - **More than two players** — bump `MAX_PLAYERS` in `session.ts`; the UI lobby is the only 2-player-specific piece.

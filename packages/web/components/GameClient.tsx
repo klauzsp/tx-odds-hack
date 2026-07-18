@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { GameFixture, QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
+import type { GameFixture, QuestionType, SessionState, TeamCode } from "@matchpot/shared";
 import {
   DEMO_FIXTURES,
   ENTRY_LAMPORTS,
   ENTRY_WINDOW_MS,
   TEAM_CODES,
-} from "@nextgoal/shared";
+} from "@matchpot/shared";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   ensureEscrowDeposit,
@@ -155,6 +155,16 @@ export default function GameClient() {
     });
   };
 
+  const playAgain = () => {
+    joinedRef.current = null;
+    getSocket().emit("session:leave", () => undefined);
+    setState(null);
+    setPlayerId(null);
+    setEscrow(null);
+    setCodeInput("");
+    setError(null);
+  };
+
   const predict = (team: TeamCode) => {
     if (!state?.question) return;
     setError(null);
@@ -195,14 +205,57 @@ export default function GameClient() {
     );
   }
 
+  if (state.status === "expired") {
+    return <ExpiredScreen state={state} onPlayAgain={playAgain} />;
+  }
+
   return (
     <MatchScreen
       state={state}
       playerId={playerId}
       escrow={escrow}
       onPredict={predict}
+      onPlayAgain={playAgain}
       error={error}
     />
+  );
+}
+
+function ExpiredScreen({
+  state,
+  onPlayAgain,
+}: {
+  state: SessionState;
+  onPlayAgain: () => void;
+}) {
+  return (
+    <main className="shell">
+      <div className="card finalCard">
+        <p className="trophy">⏱️</p>
+        <h2>Session expired</h2>
+        <p className="muted">
+          Both entries were not funded within five minutes of kickoff, so this match did
+          not start.
+        </p>
+        {!state.refundComplete ? (
+          <p className="muted small">Checking the prize pool for deposits to refund…</p>
+        ) : state.refundSignature ? (
+          <a
+            className="explorerLink"
+            href={`https://explorer.solana.com/tx/${state.refundSignature}?cluster=devnet`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Deposits refunded on Solana ↗
+          </a>
+        ) : (
+          <p className="muted small">No deposits were made, so no refund was needed.</p>
+        )}
+        <button className="btn primary playAgainBtn" onClick={onPlayAgain}>
+          Choose another match
+        </button>
+      </div>
+    </main>
   );
 }
 
@@ -230,7 +283,7 @@ function HomeScreen(props: {
       <div className="hero">
         <span className="badge">World Cup 2026 · powered by TXODDS</span>
         <h1>
-          Next<span className="accent">Goal</span>
+          Match<span className="accent">Pot</span>
         </h1>
         <p className="tagline">
           Call the next goal before your friends do. Correct picks pay out points at live
@@ -344,6 +397,7 @@ function LobbyScreen(props: {
 }) {
   const { state, playerId } = props;
   const now = useCurrentTime();
+  const [copied, setCopied] = useState(false);
   const isHost = playerId === state.hostId;
   const me = state.players.find((player) => player.id === playerId);
   const deposited = Boolean(me && props.escrow?.depositors.includes(me.wallet));
@@ -364,7 +418,21 @@ function LobbyScreen(props: {
     <main className="shell">
       <div className="card lobby">
         <p className="lobbyLabel">Session code</p>
-        <p className="sessionCode">{state.code}</p>
+        <div className="sessionCodeRow">
+          <p className="sessionCode">{state.code}</p>
+          <button
+            className="copyCodeBtn"
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(state.code).then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1_500);
+              });
+            }}
+          >
+            {copied ? "Copied ✓" : "Copy"}
+          </button>
+        </div>
         <p className="muted">Share this code with your friend</p>
 
         <div className="slots">
@@ -516,6 +584,7 @@ function MatchScreen(props: {
   playerId: string;
   escrow: EscrowSnapshot | null;
   onPredict: (team: TeamCode) => void;
+  onPlayAgain: () => void;
   error: string | null;
 }) {
   const { state, playerId } = props;
@@ -526,6 +595,30 @@ function MatchScreen(props: {
     state.players.find((p) => p.id === id)?.name ?? "Unknown";
   const team = (code: TeamCode) =>
     code === "HOME" ? state.fixture.home : state.fixture.away;
+  const notifiedQuestion = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!question || notifiedQuestion.current === question.id) return;
+    notifiedQuestion.current = question.id;
+    navigator.vibrate?.(80);
+    try {
+      const audio = new AudioContext();
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(660, audio.currentTime);
+      gain.gain.setValueAtTime(0.0001, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.12, audio.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.18);
+      oscillator.connect(gain).connect(audio.destination);
+      oscillator.start();
+      oscillator.stop(audio.currentTime + 0.2);
+      oscillator.addEventListener("ended", () => void audio.close());
+    } catch {
+      // Browsers may block audio until the page has received a user gesture;
+      // the visual pop animation and vibration remain as fallbacks.
+    }
+  }, [question]);
 
   return (
     <main className="shell wide">
@@ -555,6 +648,7 @@ function MatchScreen(props: {
               state={state}
               playerId={playerId}
               escrow={props.escrow}
+              onPlayAgain={props.onPlayAgain}
             />
           ) : question ? (
             <div className="card questionCard">
@@ -705,10 +799,12 @@ function FinalCard({
   state,
   playerId,
   escrow,
+  onPlayAgain,
 }: {
   state: SessionState;
   playerId: string;
   escrow: EscrowSnapshot | null;
+  onPlayAgain: () => void;
 }) {
   const winners = state.winners ?? [];
   const winnerNames = state.players
@@ -763,6 +859,9 @@ function FinalCard({
             : "…"}
         </p>
       )}
+      <button className="btn primary playAgainBtn" onClick={onPlayAgain}>
+        Play another match
+      </button>
     </div>
   );
 }

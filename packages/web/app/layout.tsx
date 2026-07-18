@@ -6,7 +6,7 @@ import SolanaWalletProvider from "../components/SolanaWalletProvider";
 import WalletHeader from "../components/WalletHeader";
 
 export const metadata: Metadata = {
-  title: "NextGoal — live prediction battles",
+  title: "MatchPot — live prediction battles",
   description:
     "Predict the next goal with your friends during live World Cup matches, powered by TXODDS.",
 };

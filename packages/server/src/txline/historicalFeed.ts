@@ -1,9 +1,9 @@
-import type { FeedEvent, GameFixture, NextGoalOdds, TeamCode } from "@nextgoal/shared";
+import type { FeedEvent, GameFixture, GoalOdds, TeamCode } from "@matchpot/shared";
 import type { FeedHandlers, MatchFeed } from "../feed";
 import { SimulatedFeed } from "../simulatedFeed";
 import { apiGet, dataHeaders, ensureAuth, type TxLineAuth } from "./auth";
 import { networkConfig } from "./config";
-import { mapNextGoalOdds, type ParticipantTeams, type Rec } from "./feed";
+import { mapGoalOdds, type ParticipantTeams, type Rec } from "./feed";
 
 // Replays a finished match from real TxLINE data.
 //
@@ -178,8 +178,8 @@ export class TxLineHistoricalFeed implements MatchFeed {
             `/odds/snapshot/${this.fixture.id}?asOf=${asOf}`,
           );
           for (const record of snapshot ?? []) {
-            const odds = mapNextGoalOdds(record, teams);
-            if (odds) return { kind: "ODDS", minute: m, nextGoal: odds };
+            const odds = mapGoalOdds(record, teams);
+            if (odds) return { kind: "ODDS", minute: m, goalOdds: odds };
           }
         } catch {
           // A missing interval just means no odds tick at that minute.

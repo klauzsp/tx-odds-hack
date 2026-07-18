@@ -5,10 +5,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-nextgoal_escrow = "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET"
+matchpot_escrow = "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET"
 
 [programs.devnet]
-nextgoal_escrow = "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET"
+matchpot_escrow = "Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET"
 
 [provider]
 cluster = "localnet"

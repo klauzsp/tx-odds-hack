@@ -1,5 +1,5 @@
 import { AnchorProvider, BN, Program } from "@anchor-lang/core";
-import { ENTRY_LAMPORTS } from "@nextgoal/shared";
+import { ENTRY_LAMPORTS } from "@matchpot/shared";
 import type { AnchorWallet } from "@solana/wallet-adapter-react";
 import {
   Connection,
@@ -8,8 +8,8 @@ import {
   Transaction,
   type TransactionSignature,
 } from "@solana/web3.js";
-import idl from "../idl/nextgoal_escrow.json";
-import type { NextgoalEscrow } from "../idl/nextgoal_escrow";
+import idl from "../idl/matchpot_escrow.json";
+import type { MatchpotEscrow } from "../idl/matchpot_escrow";
 
 const PROGRAM_ID = new PublicKey(idl.address);
 const ESCROW_SEED = new TextEncoder().encode("nextgoal");
@@ -34,7 +34,7 @@ function getEscrowAddress(sessionId: string): PublicKey {
   )[0];
 }
 
-function getProgram(connection: Connection, wallet: AnchorWallet): Program<NextgoalEscrow> {
+function getProgram(connection: Connection, wallet: AnchorWallet): Program<MatchpotEscrow> {
   // Anchor's browser provider only needs the three methods exposed by
   // wallet-adapter's AnchorWallet. Its public barrel currently types `Wallet`
   // as the stricter Node wallet class, so keep the compatibility cast here.
@@ -42,7 +42,7 @@ function getProgram(connection: Connection, wallet: AnchorWallet): Program<Nextg
     commitment: "confirmed",
     preflightCommitment: "confirmed",
   });
-  return new Program<NextgoalEscrow>(idl as unknown as NextgoalEscrow, provider);
+  return new Program<MatchpotEscrow>(idl as unknown as MatchpotEscrow, provider);
 }
 
 export async function getEscrowSnapshot(

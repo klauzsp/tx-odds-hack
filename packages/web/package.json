@@ -1,5 +1,5 @@
 {
-  "name": "@nextgoal/web",
+  "name": "@matchpot/web",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@anchor-lang/core": "^1.1.2",
-    "@nextgoal/shared": "workspace:*",
+    "@matchpot/shared": "workspace:*",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-phantom": "^0.9.29",
     "@solana/wallet-adapter-react": "^0.15.39",

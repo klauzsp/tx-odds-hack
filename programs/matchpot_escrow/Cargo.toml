@@ -1,13 +1,13 @@
 [package]
-name = "nextgoal-escrow"
+name = "matchpot-escrow"
 version = "0.1.0"
-description = "Per-session SOL prize pool escrow for NextGoal"
+description = "Per-session SOL prize pool escrow for MatchPot"
 edition.workspace = true
 rust-version.workspace = true
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "nextgoal_escrow"
+name = "matchpot_escrow"
 
 [features]
 default = []

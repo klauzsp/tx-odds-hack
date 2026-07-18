@@ -1,4 +1,4 @@
-import type { NextGoalOdds, TeamCode } from "@nextgoal/shared";
+import type { GoalOdds, TeamCode } from "@matchpot/shared";
 import type { FeedHandlers, MatchFeed } from "../feed";
 import { apiGet, ensureAuth, type TxLineAuth } from "./auth";
 import { openStream } from "./stream";
@@ -37,6 +37,7 @@ export class TxLineFeed implements MatchFeed {
   private minute = 0;
   private kickedOff = false;
   private stopped = false;
+  private seenActions = new Set<string>();
 
   constructor(private readonly fixtureId: number) {}
 
@@ -74,6 +75,11 @@ export class TxLineFeed implements MatchFeed {
         }
         this.readMinute(record);
       }
+      this.handlers?.onEvent({
+        kind: "SCORE_SNAPSHOT",
+        minute: this.minute,
+        score: { ...this.goals },
+      });
       console.log(`[txline] seeded fixture ${this.fixtureId}: score`, this.goals);
     } catch (err) {
       console.warn("[txline] no scores snapshot yet (match may not have started):", err);
@@ -99,6 +105,8 @@ export class TxLineFeed implements MatchFeed {
         }
       }
 
+      this.emitActionEvent(record);
+
       const phase = readPhase(record);
       if (phase === "HALF_TIME") this.handlers?.onEvent({ kind: "HALF_TIME", minute: this.minute });
       if (phase === "FULL_TIME") {
@@ -112,8 +120,8 @@ export class TxLineFeed implements MatchFeed {
   private onOdds(raw: string) {
     for (const record of parseRecords(raw)) {
       if (!this.isOurFixture(record)) continue;
-      const odds = mapNextGoalOdds(record, { p1: P1_TEAM, p2: P2_TEAM });
-      if (odds) this.handlers?.onEvent({ kind: "ODDS", minute: this.minute, nextGoal: odds });
+      const odds = mapGoalOdds(record, { p1: P1_TEAM, p2: P2_TEAM });
+      if (odds) this.handlers?.onEvent({ kind: "ODDS", minute: this.minute, goalOdds: odds });
     }
   }
 
@@ -123,10 +131,47 @@ export class TxLineFeed implements MatchFeed {
   }
 
   private readMinute(record: Rec) {
-    const minute = record.Minute ?? record.minute ?? record.MatchMinute ?? record.matchMinute;
+    const clockSeconds = record.Clock?.Seconds ?? record.clock?.seconds;
+    const minute =
+      record.Minute ??
+      record.minute ??
+      record.MatchMinute ??
+      record.matchMinute ??
+      (typeof clockSeconds === "number" ? Math.floor(clockSeconds / 60) : undefined);
     if (typeof minute === "number" && Number.isFinite(minute)) {
       this.minute = minute;
       this.handlers?.onMinute(minute);
+    }
+  }
+
+  /** Map the same action records verified by the historical endpoint. */
+  private emitActionEvent(record: Rec) {
+    const action = String(record.Action ?? record.action ?? "").toLowerCase();
+    if (!action) return;
+    const participant = Number(record.Participant ?? record.participant);
+    const team = participant === 1 ? P1_TEAM : participant === 2 ? P2_TEAM : null;
+    const data = record.Data ?? record.data;
+    const key = [
+      record.Ts ?? record.ts ?? "",
+      action,
+      participant,
+      data?.PlayerId ?? data?.playerId ?? "",
+      this.minute,
+    ].join(":");
+    if (this.seenActions.has(key)) return;
+    this.seenActions.add(key);
+
+    if ((action === "yellow_card" || action === "red_card") && team) {
+      this.handlers?.onEvent({
+        kind: "CARD",
+        minute: this.minute,
+        team,
+        card: action === "red_card" ? "red" : "yellow",
+        player: String(data?.PlayerName ?? data?.playerName ?? ""),
+      });
+    }
+    if (action === "corner" && team) {
+      this.handlers?.onEvent({ kind: "CORNER", minute: this.minute, team });
     }
   }
 }
@@ -169,7 +214,7 @@ function readStat(record: Rec, key: number): number | null {
 //     MarketParameters: "line=1.5"|null, MarketPeriod: "half=1"|null,
 //     PriceNames: ["part1","draw","part2"], Prices: [2508,2690,4356], Pct: [...] }
 // Prices are decimal odds ×1000.
-export function mapNextGoalOdds(record: Rec, teams: ParticipantTeams): NextGoalOdds | null {
+export function mapGoalOdds(record: Rec, teams: ParticipantTeams): GoalOdds | null {
   const type = String(record.SuperOddsType ?? "");
   const names: unknown = record.PriceNames;
   const prices: unknown = record.Prices;
@@ -184,7 +229,7 @@ export function mapNextGoalOdds(record: Rec, teams: ParticipantTeams): NextGoalO
 
   // Ideal: a dedicated next-goal market, if the feed carries one in-running.
   if (type.includes("NEXTGOAL") || type.includes("NEXT_GOAL")) {
-    return { [teams.p1]: clampOdds(p1), [teams.p2]: clampOdds(p2) } as NextGoalOdds;
+    return { [teams.p1]: clampOdds(p1), [teams.p2]: clampOdds(p2) } as GoalOdds;
   }
 
   // Fallback: approximate from the demargined full-match 1X2 by renormalising
@@ -196,7 +241,7 @@ export function mapNextGoalOdds(record: Rec, teams: ParticipantTeams): NextGoalO
     return {
       [teams.p1]: clampOdds((q1 + q2) / q1),
       [teams.p2]: clampOdds((q1 + q2) / q2),
-    } as NextGoalOdds;
+    } as GoalOdds;
   }
   return null;
 }
@@ -207,10 +252,23 @@ function clampOdds(x: number): number {
 }
 
 function readPhase(record: Rec): "HALF_TIME" | "FULL_TIME" | null {
-  const phase = String(record.Phase ?? record.phase ?? record.GamePhase ?? record.gamePhase ?? "");
+  const phase = [
+    record.Action,
+    record.action,
+    record.Phase,
+    record.phase,
+    record.GamePhase,
+    record.gamePhase,
+  ]
+    .filter((value) => value != null)
+    .join(" ");
   const normalized = phase.toLowerCase().replace(/[\s_-]/g, "");
   if (normalized.includes("halftime")) return "HALF_TIME";
-  if (["fulltime", "finished", "final", "ended"].some((s) => normalized.includes(s)))
+  if (
+    ["fulltime", "finished", "final", "ended", "gamefinalised"].some((s) =>
+      normalized.includes(s),
+    )
+  )
     return "FULL_TIME";
   return null;
 }
