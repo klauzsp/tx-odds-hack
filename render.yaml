@@ -8,7 +8,7 @@ services:
     healthCheckPath: /
     envVars:
       - key: TXLINE_NETWORK
-        value: mainnet
+        value: devnet
       - key: TXLINE_SERVICE_LEVEL
         value: "12"
       - key: TXLINE_API_TOKEN

@@ -40,7 +40,8 @@ Deploy the two runtime processes separately:
    `packages/server/.txline-credentials.json`, and set
    `ESCROW_SETTLER_SECRET_KEY` to the complete JSON array in the ignored
    `_keys/devnet-test2.json`. `SOLANA_RPC_URL` is optional; without it the server
-   uses Solana's public devnet endpoint.
+   uses Solana's public devnet endpoint. Keep `TXLINE_NETWORK` equal to the
+   `network` recorded in the credentials file (the supplied blueprint uses devnet).
 2. Import the same GitHub repository into Vercel, set its Root Directory to
    `packages/web`, and add `NEXT_PUBLIC_SERVER_URL` with the HTTPS URL of the
    deployed game server. `NEXT_PUBLIC_SOLANA_RPC_URL` is optional.
