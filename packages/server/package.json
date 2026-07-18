@@ -6,11 +6,18 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "txline:setup": "tsx src/txline/setup.ts",
+    "txline:probe": "tsx src/txline/probe.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@coral-xyz/anchor": "0.32.1",
     "@nextgoal/shared": "workspace:*",
-    "socket.io": "^4.8.1"
+    "@solana/spl-token": "^0.4.12",
+    "@solana/web3.js": "^1.91.9",
+    "eventsource": "^4.0.0",
+    "socket.io": "^4.8.1",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

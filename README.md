@@ -22,14 +22,36 @@ packages/
   web/      Next.js app — join/lobby/live match/full-time screens
 ```
 
-- **`server/src/fixture.ts`** — the England vs Mexico timeline, shaped like a TXODDS live feed: match events (goals, half-time) interleaved with next-goal odds ticks. **This is the TXODDS integration point**: swap the static array for a subscriber that maps real TXODDS push messages onto `FeedEvent` and feeds them to `MatchEngine`.
-- **`server/src/matchEngine.ts`** — replays the feed one match minute per tick.
+- **`server/src/feed.ts`** — feed abstraction. `FEED=sim` (default) replays the bundled England vs Mexico fixture; `FEED=txline` consumes the real TxLINE SSE streams.
+- **`server/src/fixture.ts`** + **`simulatedFeed.ts`** — the demo replay: match events (goals, half-time) interleaved with next-goal odds ticks, one match minute per tick.
+- **`server/src/txline/`** — real [TxLINE](https://txline-docs.txodds.com/documentation/quickstart) integration (see below).
 - **`server/src/session.ts`** — all game rules: join/rejoin (same name reclaims a disconnected seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
+
+## Live TxLINE data (World Cup free tier)
+
+TxLINE gives free World Cup data; API access is granted via an on-chain Solana subscription (no TxL payment on the free tier, just tx fees). One-time setup with a funded mainnet wallet:
+
+```bash
+cd packages/server
+TXLINE_WALLET=~/.config/solana/id.json pnpm txline:setup   # subscribe on-chain + activate API token
+pnpm txline:probe                                           # list World Cup fixtures, tail live streams
+pnpm txline:probe <fixtureId>                               # inspect one fixture's snapshots + messages
+```
+
+Then run the game against the live feed:
+
+```bash
+FEED=txline TXLINE_FIXTURE_ID=<id> pnpm dev
+```
+
+Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), `TXLINE_P1_TEAM` / `TXLINE_P2_TEAM` (map TxLINE participant slots to app teams, default ENG/MEX).
+
+**Before demoing live:** the docs don't publish full stream payload examples, so `txline/feed.ts` parses defensively (goals are detected from documented stat keys 1/2 = participant total goals). Run the probe during any live match and tighten the field mapping — especially the next-goal odds market, which is currently logged but not yet mapped (`onOdds` TODO).
 
 ## Roadmap
 
 - **Anchor / SOL prize pot** — escrow program: both players deposit at kickoff, server (or an oracle-signed result) releases the pot to the winner at full time. The winner IDs are already computed in `Session.finish()`.
-- **Real TXODDS feed** — replace the fixture as described above.
+- **Next-goal odds from TxLINE** — map the real odds market in `txline/feed.ts` `onOdds` so live odds drive the payout multiplier.
 - **Supabase** — auth/profiles, match history, and persistent leaderboards once the live loop is solid.
 - **More question types** — next scorer by player, over/under, will there be a goal before 60', etc. The question/result plumbing is generic enough to extend.
 - **More than two players** — bump `MAX_PLAYERS` in `session.ts`; the UI lobby is the only 2-player-specific piece.

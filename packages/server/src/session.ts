@@ -8,8 +8,8 @@ import type {
   SessionStatus,
   TeamCode,
 } from "@nextgoal/shared";
-import { MatchEngine } from "./matchEngine";
-import { FIXTURE, INITIAL_ODDS, MS_PER_MINUTE } from "./fixture";
+import { createFeed, type MatchFeed } from "./feed";
+import { INITIAL_ODDS } from "./fixture";
 
 const MAX_PLAYERS = 2;
 const BASE_POINTS = 100;
@@ -43,7 +43,7 @@ export class Session {
   private predictions = new Map<string, Prediction>();
   private lastResult: QuestionResult | null = null;
   private winners: string[] | null = null;
-  private engine: MatchEngine | null = null;
+  private matchFeed: MatchFeed | null = null;
   private questionCount = 0;
 
   constructor(
@@ -82,16 +82,23 @@ export class Session {
     if (this.players.size < MAX_PLAYERS)
       return { ok: false, error: "Waiting for your friend to join." };
 
+    let feed: MatchFeed;
+    try {
+      feed = createFeed();
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Feed unavailable." };
+    }
+
     this.status = "live";
     this.openQuestion();
-    this.engine = new MatchEngine(FIXTURE, MS_PER_MINUTE, {
+    this.matchFeed = feed;
+    this.matchFeed.start({
       onMinute: (minute) => {
         this.minute = minute;
         this.notify(this);
       },
       onEvent: (event) => this.handleFeedEvent(event),
     });
-    this.engine.start();
     return { ok: true };
   }
 
@@ -114,7 +121,7 @@ export class Session {
   }
 
   stop() {
-    this.engine?.stop();
+    this.matchFeed?.stop();
   }
 
   private handleFeedEvent(event: FeedEvent) {
@@ -180,7 +187,7 @@ export class Session {
     this.winners = [...this.players.values()]
       .filter((p) => p.score === topScore)
       .map((p) => p.id);
-    this.engine?.stop();
+    this.matchFeed?.stop();
   }
 
   toState(): SessionState {

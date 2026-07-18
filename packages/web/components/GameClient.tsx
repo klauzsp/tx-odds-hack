@@ -288,8 +288,8 @@ function MatchScreen(props: {
               {state.lastResult.team ? (
                 <>
                   <p className="resultHeadline">
-                    ⚽ {state.lastResult.scorer} scores for {TEAMS[state.lastResult.team].name} (
-                    {state.lastResult.minute}&apos;)
+                    ⚽ {state.lastResult.scorer || "Goal"} for {TEAMS[state.lastResult.team].name}{" "}
+                    ({state.lastResult.minute}&apos;)
                   </p>
                   {state.lastResult.entries.length === 0 ? (
                     <p className="muted">Nobody locked in a pick.</p>
@@ -348,7 +348,7 @@ function MatchScreen(props: {
                     {event.kind === "HALF_TIME" && "Half-time."}
                     {event.kind === "FULL_TIME" && "Full-time."}
                     {event.kind === "GOAL" &&
-                      `GOAL! ${event.scorer} (${TEAMS[event.team].name})`}
+                      `GOAL! ${event.scorer ? `${event.scorer} (${TEAMS[event.team].name})` : TEAMS[event.team].name}`}
                     {event.kind === "COMMENTARY" && event.text}
                   </span>
                 </li>

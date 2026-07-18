@@ -1,28 +1,22 @@
 import type { FeedEvent } from "@nextgoal/shared";
+import type { FeedHandlers, MatchFeed } from "./feed";
 
-export interface EngineHandlers {
-  onMinute(minute: number): void;
-  onEvent(event: FeedEvent): void;
-}
-
-/**
- * Replays a feed in real time, one match minute per tick.
- * A live TXODDS subscription would call the same handlers as messages arrive.
- */
-export class MatchEngine {
+/** Replays a recorded feed in real time, one match minute per tick. */
+export class SimulatedFeed implements MatchFeed {
   private timer: NodeJS.Timeout | null = null;
   private minute = -1;
   private readonly lastMinute: number;
+  private handlers: FeedHandlers | null = null;
 
   constructor(
     private readonly feed: FeedEvent[],
     private readonly msPerMinute: number,
-    private readonly handlers: EngineHandlers,
   ) {
     this.lastMinute = Math.max(...feed.map((e) => e.minute));
   }
 
-  start() {
+  start(handlers: FeedHandlers) {
+    this.handlers = handlers;
     this.advance();
     this.timer = setInterval(() => this.advance(), this.msPerMinute);
   }
@@ -33,6 +27,7 @@ export class MatchEngine {
   }
 
   private advance() {
+    if (!this.handlers) return;
     this.minute += 1;
     this.handlers.onMinute(this.minute);
     for (const event of this.feed) {

@@ -3,5 +3,7 @@ node_modules/
 dist/
 .env
 .env.local
+.txline-credentials.json
+_keys/
 *.tsbuildinfo
 .DS_Store

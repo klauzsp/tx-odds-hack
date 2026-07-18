@@ -1,9 +1,8 @@
 import type { FeedEvent, NextGoalOdds } from "@nextgoal/shared";
 
-// England vs Mexico replay fixture, shaped like a TXODDS live feed: match events
-// interleaved with next-goal odds ticks. To go live, replace this array with a
-// subscriber that maps real TXODDS push messages onto FeedEvent and hands them
-// to MatchEngine as they arrive.
+// England vs Mexico replay fixture, shaped like the TxLINE live feed: match
+// events interleaved with next-goal odds ticks. Used when FEED=sim (default);
+// FEED=txline consumes the real TxLINE SSE streams instead (see txline/feed.ts).
 
 /** Real-time milliseconds per match minute (90 minutes total). */
 export const MS_PER_MINUTE = Number(process.env.MS_PER_MINUTE ?? 800);
