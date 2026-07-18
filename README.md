@@ -33,7 +33,7 @@ programs/
 
 Every new game receives a random 32-byte `escrowId`, separate from its reusable four-character invite code. The Anchor program derives a session account from `["nextgoal", escrowId]`, so sessions never share a pot. Creating a game initializes that PDA and deposits the host's 0.1 devnet SOL entry; joining deposits the second entry. The server verifies both wallets against the on-chain account before kickoff.
 
-At full time the host signs the settlement transaction using the server-computed winner wallet. The program pays the complete tracked pool, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Its `cancel` instruction refunds every recorded depositor if a lobby is abandoned.
+At full time the application server automatically signs and submits settlement using the dedicated `_keys/devnet-test2.json` signer. The host has no payout authority. The program pays only when that application signer authorizes the server-computed winner, supports an equal split for tied winners, closes the settled account, and returns account rent to the host. Its `cancel` instruction lets the host refund every recorded depositor if a lobby is abandoned.
 
 Build and deploy it to devnet:
 
@@ -45,6 +45,8 @@ pnpm anchor:deploy:devnet
 The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. The canonical program keypair is `_keys/nextgoal_escrow-program-keypair.json`; the build script restores it into the disposable `target/` directory before every build. The funded devnet deployer and upgrade authority is `_keys/devnet-test.json` (`CWgRwTdXuxsL4P8TayCyREcfgjzZU4UC7bLZeopNJN5r`). Both are intentionally gitignored: keep an encrypted off-machine backup of `_keys/` and never commit or share its contents.
 
 Initial deployment locks rent in the durable program account. Later upgrades reuse the same program and normally cost only transaction fees (plus a temporary deployment buffer), so the deployer should not need repeated large faucet top-ups. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
+
+The server settlement signer is `6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj` and is kept separate from the upgrade authority. Override its local key path with `ESCROW_SETTLER_KEYPAIR` when deploying the server elsewhere.
 
 For a local money-flow test, start a validator with the compiled program and run:
 
@@ -82,7 +84,7 @@ Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = rea
 
 ## Roadmap
 
-- **Oracle-authorized settlement** — the minimal escrow trusts the session host to submit the winner wallet. Replace the host authority with a server/oracle result signature before using real mainnet SOL.
+- **Oracle-authorized settlement** — the demo automatically settles using an application-server signer. Replace it with signed oracle results or threshold signers before using real mainnet SOL.
 - **Next-goal odds from TxLINE** — map the real odds market in `txline/feed.ts` `onOdds` so live odds drive the payout multiplier.
 - **Supabase** — auth/profiles, match history, and persistent leaderboards once the live loop is solid.
 - **More question types** — next scorer by player, over/under, will there be a goal before 60', etc. The question/result plumbing is generic enough to extend.

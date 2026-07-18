@@ -1,4 +1,5 @@
 import anchor from "@anchor-lang/core";
+import { readFileSync } from "node:fs";
 import {
   Connection,
   Keypair,
@@ -14,6 +15,13 @@ const { AnchorProvider, BN, Program, Wallet } = anchor;
 const connection = new Connection("http://127.0.0.1:8899", "confirmed");
 const authority = Keypair.generate();
 const player = Keypair.generate();
+const settlementAuthority = Keypair.fromSecretKey(
+  Uint8Array.from(
+    JSON.parse(
+      readFileSync(new URL("../../../_keys/devnet-test2.json", import.meta.url), "utf8"),
+    ),
+  ),
+);
 const provider = new AnchorProvider(connection, new Wallet(authority), {
   commitment: "confirmed",
   preflightCommitment: "confirmed",
@@ -35,7 +43,11 @@ function escrowAddress(sessionId) {
   )[0];
 }
 
-await Promise.all([airdrop(authority.publicKey), airdrop(player.publicKey)]);
+await Promise.all([
+  airdrop(authority.publicKey),
+  airdrop(player.publicKey),
+  airdrop(settlementAuthority.publicKey),
+]);
 
 const sessionId = Array(32).fill(7);
 const escrow = escrowAddress(sessionId);
@@ -74,9 +86,19 @@ if (!funded.prizePool.eq(new BN(entry * 2)) || funded.depositors.length !== 2) {
 }
 
 const winnerBefore = await connection.getBalance(player.publicKey);
-await program.methods
+const settlementProvider = new AnchorProvider(
+  connection,
+  new Wallet(settlementAuthority),
+  provider.opts,
+);
+const settlementProgram = new Program(idl, settlementProvider);
+await settlementProgram.methods
   .settle([player.publicKey])
-  .accountsPartial({ authority: authority.publicKey, escrow })
+  .accountsPartial({
+    settlementAuthority: settlementAuthority.publicKey,
+    authority: authority.publicKey,
+    escrow,
+  })
   .remainingAccounts([{ pubkey: player.publicKey, isSigner: false, isWritable: true }])
   .rpc();
 const winnerAfter = await connection.getBalance(player.publicKey);

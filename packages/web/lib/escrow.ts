@@ -110,25 +110,6 @@ export async function ensureEscrowDeposit(
     .rpc();
 }
 
-export async function settleEscrow(
-  connection: Connection,
-  wallet: AnchorWallet,
-  sessionId: string,
-  winnerAddresses: string[],
-): Promise<TransactionSignature> {
-  const program = getProgram(connection, wallet);
-  const escrow = getEscrowAddress(sessionId);
-  const winners = winnerAddresses.map((address) => new PublicKey(address));
-
-  return program.methods
-    .settle(winners)
-    .accountsPartial({ authority: wallet.publicKey, escrow })
-    .remainingAccounts(
-      winners.map((pubkey) => ({ pubkey, isSigner: false, isWritable: true })),
-    )
-    .rpc();
-}
-
 export async function cancelEscrow(
   connection: Connection,
   wallet: AnchorWallet,

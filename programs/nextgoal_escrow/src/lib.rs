@@ -17,6 +17,7 @@ pub mod nextgoal_escrow {
         let escrow = &mut ctx.accounts.escrow;
         escrow.session_id = session_id;
         escrow.authority = ctx.accounts.authority.key();
+        escrow.settlement_authority = SETTLEMENT_AUTHORITY;
         escrow.entry_lamports = entry_lamports;
         escrow.prize_pool = 0;
         escrow.depositors = Vec::new();
@@ -175,10 +176,13 @@ pub struct Deposit<'info> {
 #[derive(Accounts)]
 pub struct Settle<'info> {
     #[account(mut)]
-    pub authority: Signer<'info>,
+    pub settlement_authority: Signer<'info>,
+    /// CHECK: This is only the rent recipient and must match the stored host.
+    #[account(mut, address = escrow.authority)]
+    pub authority: UncheckedAccount<'info>,
     #[account(
         mut,
-        has_one = authority @ EscrowError::Unauthorized,
+        has_one = settlement_authority @ EscrowError::InvalidSettlementAuthority,
         seeds = [ESCROW_SEED, escrow.session_id.as_ref()],
         bump = escrow.bump,
         close = authority
@@ -205,6 +209,7 @@ pub struct Cancel<'info> {
 pub struct SessionEscrow {
     pub session_id: [u8; 32],
     pub authority: Pubkey,
+    pub settlement_authority: Pubkey,
     pub entry_lamports: u64,
     pub prize_pool: u64,
     #[max_len(16)]
@@ -214,6 +219,7 @@ pub struct SessionEscrow {
 
 #[constant]
 pub const ESCROW_SEED: &[u8] = b"nextgoal";
+pub const SETTLEMENT_AUTHORITY: Pubkey = pubkey!("6XYhnadptgK7a9UpC44XeKcWefX1pEuZHGkYHHUPE6Uj");
 pub const MAX_DEPOSITORS: usize = 16;
 pub const MAX_WINNERS: usize = 16;
 
@@ -270,4 +276,6 @@ pub enum EscrowError {
     Unauthorized,
     #[msg("Refund accounts do not match the session depositors")]
     DepositorAccountsMismatch,
+    #[msg("Only the NextGoal application can settle this session")]
+    InvalidSettlementAuthority,
 }

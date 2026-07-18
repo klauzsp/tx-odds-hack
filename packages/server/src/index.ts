@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@nextgoal/shared";
 import { Session, SessionStore } from "./session";
-import { verifyEscrowReady } from "./escrow";
+import { settleFinishedEscrow, verifyEscrowReady } from "./escrow";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -21,8 +21,30 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string,
   { cors: { origin: "*" } },
 );
 
+const settling = new Set<string>();
+
+function maybeSettle(session: Session) {
+  const state = session.toState();
+  if (state.status !== "finished" || state.payoutSignature || settling.has(state.escrowId)) return;
+
+  settling.add(state.escrowId);
+  void settleFinishedEscrow(state)
+    .then((signature) => {
+      console.log(`💸 Settled ${state.code}: ${signature}`);
+      session.recordPayout(signature);
+    })
+    .catch((error) => {
+      console.error(`Escrow settlement failed for ${state.code}:`, error);
+      setTimeout(() => {
+        settling.delete(state.escrowId);
+        maybeSettle(session);
+      }, 5_000);
+    });
+}
+
 const store = new SessionStore((session: Session) => {
   io.to(session.code).emit("state", session.toState());
+  maybeSettle(session);
 });
 
 io.on("connection", (socket) => {

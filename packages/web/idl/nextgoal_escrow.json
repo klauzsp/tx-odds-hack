@@ -199,12 +199,16 @@
       ],
       "accounts": [
         {
-          "name": "authority",
+          "name": "settlement_authority",
           "writable": true,
           "signer": true,
           "relations": [
             "escrow"
           ]
+        },
+        {
+          "name": "authority",
+          "writable": true
         },
         {
           "name": "escrow",
@@ -367,6 +371,11 @@
       "code": 6010,
       "name": "DepositorAccountsMismatch",
       "msg": "Refund accounts do not match the session depositors"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidSettlementAuthority",
+      "msg": "Only the NextGoal application can settle this session"
     }
   ],
   "types": [
@@ -426,6 +435,10 @@
           },
           {
             "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "settlement_authority",
             "type": "pubkey"
           },
           {

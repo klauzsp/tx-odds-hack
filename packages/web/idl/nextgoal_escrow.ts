@@ -205,12 +205,16 @@ export type NextgoalEscrow = {
       ],
       "accounts": [
         {
-          "name": "authority",
+          "name": "settlementAuthority",
           "writable": true,
           "signer": true,
           "relations": [
             "escrow"
           ]
+        },
+        {
+          "name": "authority",
+          "writable": true
         },
         {
           "name": "escrow",
@@ -373,6 +377,11 @@ export type NextgoalEscrow = {
       "code": 6010,
       "name": "depositorAccountsMismatch",
       "msg": "Refund accounts do not match the session depositors"
+    },
+    {
+      "code": 6011,
+      "name": "invalidSettlementAuthority",
+      "msg": "Only the NextGoal application can settle this session"
     }
   ],
   "types": [
@@ -432,6 +441,10 @@ export type NextgoalEscrow = {
           },
           {
             "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "settlementAuthority",
             "type": "pubkey"
           },
           {

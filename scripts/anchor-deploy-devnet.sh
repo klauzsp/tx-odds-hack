@@ -17,4 +17,11 @@ anchor program deploy \
   --program-name nextgoal_escrow \
   --program-keypair "$program_key" \
   --provider.cluster devnet \
+  --provider.wallet "$deployer_key" \
+  --no-idl
+
+anchor idl upgrade \
+  --filepath "$repo_root/target/idl/nextgoal_escrow.json" \
+  Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET \
+  --provider.cluster devnet \
   --provider.wallet "$deployer_key"

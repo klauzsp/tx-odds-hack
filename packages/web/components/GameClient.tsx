@@ -7,7 +7,6 @@ import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   ensureEscrowDeposit,
   getEscrowSnapshot,
-  settleEscrow,
   type EscrowSnapshot,
 } from "../lib/escrow";
 
@@ -28,7 +27,6 @@ export default function GameClient() {
   const [error, setError] = useState<string | null>(null);
   const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
-  const [payoutSignature, setPayoutSignature] = useState<string | null>(null);
   const joinedRef = useRef<{ code: string; name: string; wallet: string } | null>(null);
 
   useEffect(() => {
@@ -134,32 +132,6 @@ export default function GameClient() {
     });
   };
 
-  const payout = async () => {
-    if (!state || !wallet || !state.winners?.length) return;
-    const winnerWallets = state.winners.map((winnerId) => {
-      const winner = state.players.find((player) => player.id === winnerId);
-      if (!winner) throw new Error("Winner wallet is missing from the session.");
-      return winner.wallet;
-    });
-
-    setChainBusy(true);
-    setError(null);
-    try {
-      const signature = await settleEscrow(
-        connection,
-        wallet,
-        state.escrowId,
-        winnerWallets,
-      );
-      setPayoutSignature(signature);
-      setEscrow(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "The payout transaction failed.");
-    } finally {
-      setChainBusy(false);
-    }
-  };
-
   if (!state || !playerId) {
     return (
       <HomeScreen
@@ -195,9 +167,6 @@ export default function GameClient() {
       state={state}
       playerId={playerId}
       escrow={escrow}
-      chainBusy={chainBusy}
-      payoutSignature={payoutSignature}
-      onPayout={payout}
       onPredict={predict}
       error={error}
     />
@@ -368,9 +337,6 @@ function MatchScreen(props: {
   state: SessionState;
   playerId: string;
   escrow: EscrowSnapshot | null;
-  chainBusy: boolean;
-  payoutSignature: string | null;
-  onPayout: () => void;
   onPredict: (team: TeamCode) => void;
   error: string | null;
 }) {
@@ -409,9 +375,6 @@ function MatchScreen(props: {
               state={state}
               playerId={playerId}
               escrow={props.escrow}
-              chainBusy={props.chainBusy}
-              payoutSignature={props.payoutSignature}
-              onPayout={props.onPayout}
             />
           ) : question ? (
             <div className="card questionCard">
@@ -562,16 +525,10 @@ function FinalCard({
   state,
   playerId,
   escrow,
-  chainBusy,
-  payoutSignature,
-  onPayout,
 }: {
   state: SessionState;
   playerId: string;
   escrow: EscrowSnapshot | null;
-  chainBusy: boolean;
-  payoutSignature: string | null;
-  onPayout: () => void;
 }) {
   const winners = state.winners ?? [];
   const winnerNames = state.players
@@ -579,7 +536,6 @@ function FinalCard({
     .map((p) => p.name);
   const iWon = winners.includes(playerId);
   const tie = winners.length > 1;
-  const isHost = playerId === state.hostId;
   const settled = state.results.filter((r) => r.team !== null);
   const correctCount = (pid: string) =>
     settled.filter((r) => r.entries.some((e) => e.playerId === pid && e.points > 0)).length;
@@ -610,24 +566,21 @@ function FinalCard({
             </li>
           ))}
       </ul>
-      {payoutSignature ? (
+      {state.payoutSignature ? (
         <a
           className="explorerLink"
-          href={`https://explorer.solana.com/tx/${payoutSignature}?cluster=devnet`}
+          href={`https://explorer.solana.com/tx/${state.payoutSignature}?cluster=devnet`}
           target="_blank"
           rel="noreferrer"
         >
           Prize paid on Solana ↗
         </a>
-      ) : isHost && escrow ? (
-        <button className="btn primary" onClick={onPayout} disabled={chainBusy}>
-          {chainBusy
-            ? "Confirming payout…"
-            : `Pay winner${tie ? "s" : ""} ${(escrow.prizePoolLamports / 1_000_000_000).toFixed(2)} SOL`}
-        </button>
       ) : (
         <p className="muted small">
-          {escrow ? "Waiting for the host to release the prize." : "Prize pool settled."}
+          Application payout in progress
+          {escrow
+            ? ` · ${(escrow.prizePoolLamports / 1_000_000_000).toFixed(2)} SOL`
+            : "…"}
         </p>
       )}
     </div>

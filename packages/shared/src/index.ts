@@ -94,6 +94,8 @@ export interface SessionState {
   /** All resolved/voided questions, oldest first. */
   results: QuestionResult[];
   winners: string[] | null;
+  /** Devnet transaction signature after the application settles the escrow. */
+  payoutSignature: string | null;
 }
 
 export type Ack = { ok: true } | { ok: false; error: string };

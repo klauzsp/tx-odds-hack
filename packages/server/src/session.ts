@@ -106,6 +106,7 @@ export class Session {
   private predictions = new Map<string, Map<string, Prediction>>();
   private results: QuestionResult[] = [];
   private winners: string[] | null = null;
+  private payoutSignature: string | null = null;
   private matchFeed: MatchFeed | null = null;
   private questionCount = 0;
   private nextOpenMinute = 0;
@@ -190,6 +191,12 @@ export class Session {
 
   stop() {
     this.matchFeed?.stop();
+  }
+
+  recordPayout(signature: string) {
+    if (this.status !== "finished" || this.payoutSignature) return;
+    this.payoutSignature = signature;
+    this.notify(this);
   }
 
   // ---- match loop -------------------------------------------------------
@@ -360,6 +367,7 @@ export class Session {
       lastResult: this.results.length > 0 ? this.results[this.results.length - 1] : null,
       results: [...this.results],
       winners: this.winners,
+      payoutSignature: this.payoutSignature,
     };
   }
 }
