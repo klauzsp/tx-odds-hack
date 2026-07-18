@@ -1,0 +1,90 @@
+// Shared contract between the game server and the Next.js client.
+
+export type TeamCode = "ENG" | "MEX";
+
+export const TEAMS: Record<TeamCode, { code: TeamCode; name: string; flag: string }> = {
+  ENG: { code: "ENG", name: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+  MEX: { code: "MEX", name: "Mexico", flag: "🇲🇽" },
+};
+
+export const TEAM_CODES: TeamCode[] = ["ENG", "MEX"];
+
+/** Decimal odds for "which team scores the next goal". */
+export type NextGoalOdds = Record<TeamCode, number>;
+
+export type MatchEvent =
+  | { kind: "KICKOFF"; minute: number }
+  | { kind: "COMMENTARY"; minute: number; text: string }
+  | { kind: "GOAL"; minute: number; team: TeamCode; scorer: string }
+  | { kind: "HALF_TIME"; minute: number }
+  | { kind: "FULL_TIME"; minute: number };
+
+/** Raw feed event — MatchEvents plus odds ticks (mirrors what a TXODDS live feed delivers). */
+export type FeedEvent = MatchEvent | { kind: "ODDS"; minute: number; nextGoal: NextGoalOdds };
+
+export type SessionStatus = "lobby" | "live" | "finished";
+
+export interface PlayerPublic {
+  id: string;
+  name: string;
+  score: number;
+  connected: boolean;
+}
+
+export interface ActiveQuestion {
+  id: string;
+  text: string;
+  openedAtMinute: number;
+}
+
+/** One row per player who answered; points is 0 for wrong picks. */
+export interface QuestionResultEntry {
+  playerId: string;
+  team: TeamCode;
+  points: number;
+}
+
+export interface QuestionResult {
+  questionId: string;
+  /** null means the match ended with no further goal — question voided. */
+  team: TeamCode | null;
+  scorer: string | null;
+  minute: number;
+  entries: QuestionResultEntry[];
+}
+
+export interface SessionState {
+  code: string;
+  status: SessionStatus;
+  hostId: string;
+  players: PlayerPublic[];
+  minute: number;
+  score: Record<TeamCode, number>;
+  odds: NextGoalOdds;
+  feed: MatchEvent[];
+  question: ActiveQuestion | null;
+  /** playerId -> team they locked in for the active question. */
+  predictions: Record<string, TeamCode>;
+  lastResult: QuestionResult | null;
+  winners: string[] | null;
+}
+
+export type Ack = { ok: true } | { ok: false; error: string };
+
+export type JoinAck =
+  | { ok: true; playerId: string; code: string; state: SessionState }
+  | { ok: false; error: string };
+
+export interface ServerToClientEvents {
+  state: (state: SessionState) => void;
+}
+
+export interface ClientToServerEvents {
+  "session:create": (payload: { name: string }, cb: (ack: JoinAck) => void) => void;
+  "session:join": (payload: { code: string; name: string }, cb: (ack: JoinAck) => void) => void;
+  "match:start": (cb: (ack: Ack) => void) => void;
+  "prediction:submit": (
+    payload: { questionId: string; team: TeamCode },
+    cb: (ack: Ack) => void,
+  ) => void;
+}
