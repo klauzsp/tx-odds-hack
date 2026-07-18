@@ -176,6 +176,9 @@ export class Session {
     this.expiryTimer = null;
     this.nextOpenMinute = FIRST_QUESTION_DELAY();
     this.matchFeed = feed;
+    // Move every lobby client to the match screen immediately. Historical
+    // TxLINE preparation can take a few seconds before its first feed event.
+    this.notify(this);
     this.matchFeed.start({
       onMinute: (minute) => this.handleMinute(minute),
       onEvent: (event) => this.handleFeedEvent(event),

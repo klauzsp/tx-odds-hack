@@ -33,7 +33,10 @@ export default function GameClient() {
   const [error, setError] = useState<string | null>(null);
   const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
+  const [sessionAction, setSessionAction] = useState<"create" | "join" | null>(null);
+  const [startBusy, setStartBusy] = useState(false);
   const joinedRef = useRef<{ code: string; name: string; wallet: string } | null>(null);
+  const startTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
@@ -50,8 +53,13 @@ export default function GameClient() {
       });
     };
     socket.io.on("reconnect", onReconnect);
+    const onConnectError = () => {
+      setError("Cannot reach the MatchPot game server on port 3001. Restart with pnpm dev.");
+    };
+    socket.on("connect_error", onConnectError);
     return () => {
       socket.off("state", setState);
+      socket.off("connect_error", onConnectError);
       socket.io.off("reconnect", onReconnect);
     };
   }, []);
@@ -95,6 +103,13 @@ export default function GameClient() {
     wallet,
   ]);
 
+  useEffect(() => {
+    if (!startBusy || !state || state.status === "lobby") return;
+    if (startTimeoutRef.current) window.clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = null;
+    setStartBusy(false);
+  }, [startBusy, state]);
+
   const fundPrizePool = async (session: SessionState, id: string) => {
     if (!wallet) return setError("Connect your Phantom wallet first.");
     setChainBusy(true);
@@ -116,9 +131,21 @@ export default function GameClient() {
 
   const create = () => {
     if (!wallet) return setError("Connect your Phantom wallet first.");
+    const socket = getSocket();
+    if (!socket.connected) {
+      socket.connect();
+      return setError("Cannot reach the MatchPot game server on port 3001. Restart with pnpm dev.");
+    }
     setError(null);
+    setSessionAction("create");
+    const timeout = window.setTimeout(() => {
+      setSessionAction(null);
+      setError("Creating the session is taking too long. Check the game server and try again.");
+    }, 8_000);
     const walletAddress = wallet.publicKey.toBase58();
-    getSocket().emit("session:create", { name, wallet: walletAddress, fixtureId }, (ack) => {
+    socket.emit("session:create", { name, wallet: walletAddress, fixtureId }, (ack) => {
+      window.clearTimeout(timeout);
+      setSessionAction(null);
       if (!ack.ok) return setError(ack.error);
       joinedRef.current = { code: ack.code, name, wallet: walletAddress };
       setPlayerId(ack.playerId);
@@ -131,12 +158,24 @@ export default function GameClient() {
 
   const join = () => {
     if (!wallet) return setError("Connect your Phantom wallet first.");
+    const socket = getSocket();
+    if (!socket.connected) {
+      socket.connect();
+      return setError("Cannot reach the MatchPot game server on port 3001. Restart with pnpm dev.");
+    }
     setError(null);
+    setSessionAction("join");
+    const timeout = window.setTimeout(() => {
+      setSessionAction(null);
+      setError("Joining the session is taking too long. Check the game server and try again.");
+    }, 8_000);
     const walletAddress = wallet.publicKey.toBase58();
-    getSocket().emit(
+    socket.emit(
       "session:join",
       { code: codeInput.trim().toUpperCase(), name, wallet: walletAddress },
       (ack) => {
+        window.clearTimeout(timeout);
+        setSessionAction(null);
         if (!ack.ok) return setError(ack.error);
         joinedRef.current = { code: ack.code, name, wallet: walletAddress };
         setPlayerId(ack.playerId);
@@ -150,8 +189,19 @@ export default function GameClient() {
 
   const startMatch = () => {
     setError(null);
+    setStartBusy(true);
+    startTimeoutRef.current = window.setTimeout(() => {
+      startTimeoutRef.current = null;
+      setStartBusy(false);
+      setError("Kickoff is taking longer than expected. Check Solana and try again.");
+    }, 20_000);
     getSocket().emit("match:start", (ack) => {
-      if (!ack.ok) setError(ack.error);
+      if (!ack.ok) {
+        if (startTimeoutRef.current) window.clearTimeout(startTimeoutRef.current);
+        startTimeoutRef.current = null;
+        setStartBusy(false);
+        setError(ack.error);
+      }
     });
   };
 
@@ -162,6 +212,10 @@ export default function GameClient() {
     setPlayerId(null);
     setEscrow(null);
     setCodeInput("");
+    setSessionAction(null);
+    if (startTimeoutRef.current) window.clearTimeout(startTimeoutRef.current);
+    startTimeoutRef.current = null;
+    setStartBusy(false);
     setError(null);
   };
 
@@ -186,6 +240,7 @@ export default function GameClient() {
         onJoin={join}
         walletConnected={Boolean(wallet)}
         chainBusy={chainBusy}
+        sessionAction={sessionAction}
         error={error}
       />
     );
@@ -198,6 +253,7 @@ export default function GameClient() {
         playerId={playerId}
         escrow={escrow}
         chainBusy={chainBusy}
+        startBusy={startBusy}
         onDeposit={() => fundPrizePool(state, playerId)}
         onStart={startMatch}
         error={error}
@@ -270,6 +326,7 @@ function HomeScreen(props: {
   onJoin: () => void;
   walletConnected: boolean;
   chainBusy: boolean;
+  sessionAction: "create" | "join" | null;
   error: string | null;
 }) {
   const now = useCurrentTime();
@@ -347,9 +404,19 @@ function HomeScreen(props: {
         <button
           className="btn primary"
           onClick={props.onCreate}
-          disabled={!props.name.trim() || !props.walletConnected || props.chainBusy}
+          disabled={
+            !props.name.trim() ||
+            !props.walletConnected ||
+            props.chainBusy ||
+            props.sessionAction !== null
+          }
         >
-          {!props.walletConnected
+          {props.sessionAction === "create" ? (
+            <span className="btnLoading">
+              <span className="loadingSpinner" aria-hidden="true" />
+              Creating session…
+            </span>
+          ) : !props.walletConnected
             ? "Connect wallet to play"
             : selectedFixture.status === "upcoming"
               ? "Create pending session · no deposit yet"
@@ -373,10 +440,18 @@ function HomeScreen(props: {
               !props.name.trim() ||
               props.codeInput.trim().length < 4 ||
               !props.walletConnected ||
-              props.chainBusy
+              props.chainBusy ||
+              props.sessionAction !== null
             }
           >
-            Join
+            {props.sessionAction === "join" ? (
+              <span className="btnLoading">
+                <span className="loadingSpinner" aria-hidden="true" />
+                Joining…
+              </span>
+            ) : (
+              "Join"
+            )}
           </button>
         </div>
 
@@ -391,6 +466,7 @@ function LobbyScreen(props: {
   playerId: string;
   escrow: EscrowSnapshot | null;
   chainBusy: boolean;
+  startBusy: boolean;
   onDeposit: () => void;
   onStart: () => void;
   error: string | null;
@@ -490,9 +566,12 @@ function LobbyScreen(props: {
             onClick={props.onDeposit}
             disabled={props.chainBusy || !entryOpen || waitingForHostEscrow}
           >
-            {props.chainBusy
-              ? "Confirming on Solana…"
-              : !entryOpen
+            {props.chainBusy ? (
+              <span className="btnLoading">
+                <span className="loadingSpinner" aria-hidden="true" />
+                Confirming on Solana…
+              </span>
+            ) : !entryOpen
                 ? `Deposits open ${formatTimeUntil(entryOpensAt, now)}`
                 : waitingForHostEscrow
                   ? "Waiting for host to open prize pool…"
@@ -501,8 +580,17 @@ function LobbyScreen(props: {
         )}
 
         {isHost ? (
-          <button className="btn primary" onClick={props.onStart} disabled={!ready}>
-            {ready
+          <button
+            className="btn primary"
+            onClick={props.onStart}
+            disabled={!ready || props.startBusy}
+          >
+            {props.startBusy ? (
+              <span className="btnLoading">
+                <span className="loadingSpinner" aria-hidden="true" />
+                Locking prize pool &amp; kicking off…
+              </span>
+            ) : ready
               ? "Kick off ⚽"
               : waitingForKickoff
                 ? `Starts ${fixtureCountdown(state.fixture, now)}`
