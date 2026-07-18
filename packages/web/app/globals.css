@@ -292,10 +292,68 @@ input:focus {
   gap: 20px;
 }
 
+.questionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.questionEmoji {
+  font-size: 24px;
+}
+
 .questionText {
   font-size: 21px;
   font-weight: 700;
   text-align: center;
+}
+
+.lockTimer {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.questionCard {
+  animation: popIn 0.25s ease-out;
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.waitingCard {
+  align-items: center;
+  text-align: center;
+  border-style: dashed;
+}
+
+.pendingRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pendingChip {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  border-radius: 999px;
 }
 
 .answerRow {

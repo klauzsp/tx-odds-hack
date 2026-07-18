@@ -184,24 +184,26 @@ export function mapNextGoalOdds(record: Rec, teams: ParticipantTeams): NextGoalO
 
   // Ideal: a dedicated next-goal market, if the feed carries one in-running.
   if (type.includes("NEXTGOAL") || type.includes("NEXT_GOAL")) {
-    return { [teams.p1]: round2(p1), [teams.p2]: round2(p2) } as NextGoalOdds;
+    return { [teams.p1]: clampOdds(p1), [teams.p2]: clampOdds(p2) } as NextGoalOdds;
   }
 
   // Fallback: approximate from the demargined full-match 1X2 by renormalising
-  // the two win probabilities without the draw.
+  // the two win probabilities without the draw. Clamped because a trailing
+  // team's WIN odds blow out far beyond their realistic NEXT-GOAL odds.
   if (type === "1X2_PARTICIPANT_RESULT" && record.MarketPeriod == null) {
     const q1 = 1 / p1;
     const q2 = 1 / p2;
     return {
-      [teams.p1]: round2((q1 + q2) / q1),
-      [teams.p2]: round2((q1 + q2) / q2),
+      [teams.p1]: clampOdds((q1 + q2) / q1),
+      [teams.p2]: clampOdds((q1 + q2) / q2),
     } as NextGoalOdds;
   }
   return null;
 }
 
-function round2(x: number): number {
-  return Math.round(x * 100) / 100;
+/** Payout odds are capped to keep one lucky pick from deciding the whole match. */
+function clampOdds(x: number): number {
+  return Math.round(Math.min(6, Math.max(1.05, x)) * 100) / 100;
 }
 
 function readPhase(record: Rec): "HALF_TIME" | "FULL_TIME" | null {

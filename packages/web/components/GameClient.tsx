@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { SessionState, TeamCode } from "@nextgoal/shared";
+import type { QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
 import { TEAMS, TEAM_CODES } from "@nextgoal/shared";
+
+const QUESTION_EMOJI: Record<QuestionType, string> = {
+  NEXT_GOAL: "⚽",
+  NEXT_CARD: "🟨",
+  NEXT_CORNER: "🚩",
+};
 import { getSocket } from "../lib/socket";
 
 export default function GameClient() {
@@ -215,7 +221,8 @@ function MatchScreen(props: {
 }) {
   const { state, playerId } = props;
   const me = state.players.find((p) => p.id === playerId);
-  const myPick = state.predictions[playerId] ?? null;
+  const question = state.question;
+  const myPick = question ? (state.predictions[question.id]?.[playerId] ?? null) : null;
   const playerName = (id: string) =>
     state.players.find((p) => p.id === id)?.name ?? "Unknown";
 
@@ -244,53 +251,78 @@ function MatchScreen(props: {
         <section className="mainCol">
           {state.status === "finished" ? (
             <FinalCard state={state} playerId={playerId} />
-          ) : (
-            state.question && (
-              <div className="card questionCard">
-                <p className="questionText">{state.question.text}</p>
-                <div className="answerRow">
-                  {TEAM_CODES.map((code) => {
-                    const picked = myPick === code;
-                    return (
-                      <button
-                        key={code}
-                        className={`answerBtn ${picked ? "picked" : ""} ${
-                          myPick && !picked ? "dimmed" : ""
-                        }`}
-                        onClick={() => props.onPredict(code)}
-                        disabled={myPick !== null}
-                      >
-                        <span className="answerFlag">{TEAMS[code].flag}</span>
-                        <span className="answerName">{TEAMS[code].name}</span>
-                        <span className="answerOdds">
-                          pays {Math.round(100 * state.odds[code])} pts
-                        </span>
-                        {picked && <span className="lockedTag">locked in</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="pickStatus">
-                  {state.players
-                    .filter((p) => p.id !== playerId)
-                    .map((p) => (
-                      <span key={p.id} className="muted">
-                        {p.name}: {state.predictions[p.id] ? "locked in 🔒" : "thinking…"}
-                      </span>
-                    ))}
-                </div>
+          ) : question ? (
+            <div className="card questionCard">
+              <div className="questionHeader">
+                <span className="questionEmoji">{QUESTION_EMOJI[question.type]}</span>
+                <p className="questionText">{question.text}</p>
+                <span className="lockTimer">
+                  locks {Math.max(0, question.lockAtMinute - state.minute)}&apos;
+                </span>
               </div>
-            )
+              <div className="answerRow">
+                {TEAM_CODES.map((code) => {
+                  const picked = myPick === code;
+                  return (
+                    <button
+                      key={code}
+                      className={`answerBtn ${picked ? "picked" : ""} ${
+                        myPick && !picked ? "dimmed" : ""
+                      }`}
+                      onClick={() => props.onPredict(code)}
+                      disabled={myPick !== null}
+                    >
+                      <span className="answerFlag">{TEAMS[code].flag}</span>
+                      <span className="answerName">{TEAMS[code].name}</span>
+                      <span className="answerOdds">
+                        {question.type === "NEXT_GOAL"
+                          ? `pays ${Math.round(100 * state.odds[code])} pts`
+                          : "pays 150 pts"}
+                      </span>
+                      {picked && <span className="lockedTag">locked in</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="pickStatus">
+                {state.players
+                  .filter((p) => p.id !== playerId)
+                  .map((p) => (
+                    <span key={p.id} className="muted">
+                      {p.name}:{" "}
+                      {state.predictions[question.id]?.[p.id] ? "locked in 🔒" : "thinking…"}
+                    </span>
+                  ))}
+              </div>
+            </div>
+          ) : (
+            <div className="card waitingCard">
+              <p className="muted">
+                Eyes on the match — the next question drops any minute…
+              </p>
+            </div>
           )}
 
-          {state.lastResult && (
+          {state.status !== "finished" && state.pendingQuestions.length > 0 && (
+            <div className="pendingRow">
+              {state.pendingQuestions.map((q) => {
+                const pick = state.predictions[q.id]?.[playerId];
+                return (
+                  <span key={q.id} className="pendingChip">
+                    {QUESTION_EMOJI[q.type]} {q.text.replace("?", "")} —{" "}
+                    {pick ? `you: ${TEAMS[pick].name}` : "no pick"} · awaiting…
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {state.lastResult && state.status !== "finished" && (
             <div className="card resultCard">
               {state.lastResult.team ? (
                 <>
-                  <p className="resultHeadline">
-                    ⚽ {state.lastResult.scorer || "Goal"} for {TEAMS[state.lastResult.team].name}{" "}
-                    ({state.lastResult.minute}&apos;)
-                  </p>
+                  <p className="resultHeadline">{state.lastResult.headline}</p>
+                  <p className="muted small">{state.lastResult.text}</p>
                   {state.lastResult.entries.length === 0 ? (
                     <p className="muted">Nobody locked in a pick.</p>
                   ) : (
@@ -309,7 +341,7 @@ function MatchScreen(props: {
                   )}
                 </>
               ) : (
-                <p className="muted">Final whistle — last question voided, no more goals.</p>
+                <p className="muted">{state.lastResult.headline}</p>
               )}
             </div>
           )}
@@ -349,6 +381,9 @@ function MatchScreen(props: {
                     {event.kind === "FULL_TIME" && "Full-time."}
                     {event.kind === "GOAL" &&
                       `GOAL! ${event.scorer ? `${event.scorer} (${TEAMS[event.team].name})` : TEAMS[event.team].name}`}
+                    {event.kind === "CARD" &&
+                      `${event.card === "red" ? "🟥" : "🟨"} ${event.player || TEAMS[event.team].name}${event.player ? ` (${TEAMS[event.team].name})` : ""}`}
+                    {event.kind === "CORNER" && `Corner — ${TEAMS[event.team].name}`}
                     {event.kind === "COMMENTARY" && event.text}
                   </span>
                 </li>
@@ -368,6 +403,9 @@ function FinalCard({ state, playerId }: { state: SessionState; playerId: string 
     .map((p) => p.name);
   const iWon = winners.includes(playerId);
   const tie = winners.length > 1;
+  const settled = state.results.filter((r) => r.team !== null);
+  const correctCount = (pid: string) =>
+    settled.filter((r) => r.entries.some((e) => e.playerId === pid && e.points > 0)).length;
 
   return (
     <div className="card finalCard">
@@ -385,7 +423,12 @@ function FinalCard({ state, playerId }: { state: SessionState; playerId: string 
           .sort((a, b) => b.score - a.score)
           .map((p) => (
             <li key={p.id} className={winners.includes(p.id) ? "me" : ""}>
-              <span>{p.name}</span>
+              <span>
+                {p.name}{" "}
+                <span className="muted small">
+                  ({correctCount(p.id)}/{settled.length} correct)
+                </span>
+              </span>
               <span className="pts">{p.score} pts</span>
             </li>
           ))}

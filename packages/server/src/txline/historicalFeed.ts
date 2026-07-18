@@ -102,8 +102,22 @@ export class TxLineHistoricalFeed implements MatchFeed {
         }
         case "yellow_card":
         case "red_card": {
-          const card = r.Action === "red_card" ? "Red card" : "Yellow card";
-          events.push({ kind: "COMMENTARY", minute, text: `${card} — ${sideName(r, teams)}.` });
+          const playerId = r.Data?.PlayerId;
+          events.push({
+            kind: "CARD",
+            minute,
+            team: r.Participant === 1 ? teams.p1 : teams.p2,
+            card: r.Action === "red_card" ? "red" : "yellow",
+            player: playerId ? (players.get(Number(playerId)) ?? "") : "",
+          });
+          break;
+        }
+        case "corner": {
+          events.push({
+            kind: "CORNER",
+            minute,
+            team: r.Participant === 1 ? teams.p1 : teams.p2,
+          });
           break;
         }
         case "penalty": {

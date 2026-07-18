@@ -2,7 +2,7 @@
 
 Live prediction battles for the World Cup, built for the TXODDS hackathon (consumer & fan experiences track). Friends join a session, get prompted with prediction questions during the match, and the player with the most points at full time takes the SOL prize pot.
 
-**This first build:** two players, England vs Mexico replayed from a TXODDS-style feed, one recurring question — *Who scores the next goal?* Correct picks pay out `100 × live next-goal odds` in points, so backing the underdog pays more.
+**Current build:** two players, England vs Mexico (real TxLINE data or simulation). Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 5-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time. Question types live in `QUESTION_SPECS` in `server/src/session.ts` — adding a new one is a spec entry plus (if needed) a new `MatchEvent` kind.
 
 ## Run it
 

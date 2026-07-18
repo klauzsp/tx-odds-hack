@@ -16,6 +16,8 @@ export type MatchEvent =
   | { kind: "KICKOFF"; minute: number }
   | { kind: "COMMENTARY"; minute: number; text: string }
   | { kind: "GOAL"; minute: number; team: TeamCode; scorer: string }
+  | { kind: "CARD"; minute: number; team: TeamCode; card: "yellow" | "red"; player: string }
+  | { kind: "CORNER"; minute: number; team: TeamCode }
   | { kind: "HALF_TIME"; minute: number }
   | { kind: "FULL_TIME"; minute: number };
 
@@ -31,10 +33,22 @@ export interface PlayerPublic {
   connected: boolean;
 }
 
+export type QuestionType = "NEXT_GOAL" | "NEXT_CARD" | "NEXT_CORNER";
+
+/** A question currently accepting answers; it locks at lockAtMinute. */
 export interface ActiveQuestion {
   id: string;
+  type: QuestionType;
   text: string;
   openedAtMinute: number;
+  lockAtMinute: number;
+}
+
+/** A locked question waiting for its event (e.g. the next card) to happen. */
+export interface PendingQuestion {
+  id: string;
+  type: QuestionType;
+  text: string;
 }
 
 /** One row per player who answered; points is 0 for wrong picks. */
@@ -46,9 +60,12 @@ export interface QuestionResultEntry {
 
 export interface QuestionResult {
   questionId: string;
-  /** null means the match ended with no further goal — question voided. */
+  type: QuestionType;
+  text: string;
+  /** null means the match ended before the event happened — question voided. */
   team: TeamCode | null;
-  scorer: string | null;
+  /** Display line, e.g. "⚽ Harry Kane — England (59')". */
+  headline: string;
   minute: number;
   entries: QuestionResultEntry[];
 }
@@ -63,9 +80,12 @@ export interface SessionState {
   odds: NextGoalOdds;
   feed: MatchEvent[];
   question: ActiveQuestion | null;
-  /** playerId -> team they locked in for the active question. */
-  predictions: Record<string, TeamCode>;
+  pendingQuestions: PendingQuestion[];
+  /** questionId -> playerId -> team they locked in. */
+  predictions: Record<string, Record<string, TeamCode>>;
   lastResult: QuestionResult | null;
+  /** All resolved/voided questions, oldest first. */
+  results: QuestionResult[];
   winners: string[] | null;
 }
 

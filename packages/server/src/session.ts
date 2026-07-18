@@ -2,17 +2,70 @@ import { randomUUID } from "node:crypto";
 import type {
   ActiveQuestion,
   FeedEvent,
+  MatchEvent,
   NextGoalOdds,
+  PendingQuestion,
   QuestionResult,
+  QuestionType,
   SessionState,
   SessionStatus,
   TeamCode,
 } from "@nextgoal/shared";
+import { TEAMS } from "@nextgoal/shared";
 import { createFeed, type MatchFeed } from "./feed";
 import { INITIAL_ODDS } from "./fixture";
 
 const MAX_PLAYERS = 2;
+/** Goal questions pay 100 × the TXODDS-derived odds at lock-in. */
 const BASE_POINTS = 100;
+/** Card/corner questions pay a flat rate (no TXODDS market for them yet). */
+const FLAT_POINTS = 150;
+
+// Question pacing, in match minutes. At the default tempo (800 ms per match
+// minute) a 12' window ≈ 10 real seconds to answer; ~4–6 questions per match.
+// Tune per venue: QUESTION_WINDOW=15 QUESTION_MIN_GAP=20 pnpm dev
+const ANSWER_WINDOW = Number(process.env.QUESTION_WINDOW ?? 12);
+const MIN_GAP = Number(process.env.QUESTION_MIN_GAP ?? 14);
+const FIRST_QUESTION_DELAY = () => 2 + Math.floor(Math.random() * 4); // 2'–5'
+const QUESTION_GAP = () => MIN_GAP + Math.floor(Math.random() * 11); // MIN_GAP–MIN_GAP+10
+const LAST_QUESTION_MINUTE = 82;
+
+interface QuestionSpec {
+  text: string;
+  /** Returns the winning team if this event settles the question. */
+  matches(event: MatchEvent): TeamCode | null;
+  headline(event: MatchEvent): string;
+  usesOdds: boolean;
+}
+
+const QUESTION_SPECS: Record<QuestionType, QuestionSpec> = {
+  NEXT_GOAL: {
+    text: "Who scores the next goal?",
+    matches: (e) => (e.kind === "GOAL" ? e.team : null),
+    headline: (e) =>
+      e.kind === "GOAL"
+        ? `⚽ ${e.scorer || "Goal"} — ${TEAMS[e.team].name} (${e.minute}')`
+        : "",
+    usesOdds: true,
+  },
+  NEXT_CARD: {
+    text: "Which team picks up the next card?",
+    matches: (e) => (e.kind === "CARD" ? e.team : null),
+    headline: (e) =>
+      e.kind === "CARD"
+        ? `${e.card === "red" ? "🟥" : "🟨"} ${e.player ? `${e.player} — ` : ""}${TEAMS[e.team].name} (${e.minute}')`
+        : "",
+    usesOdds: false,
+  },
+  NEXT_CORNER: {
+    text: "Who wins the next corner?",
+    matches: (e) => (e.kind === "CORNER" ? e.team : null),
+    headline: (e) => (e.kind === "CORNER" ? `🚩 Corner — ${TEAMS[e.team].name} (${e.minute}')` : ""),
+    usesOdds: false,
+  },
+};
+
+const QUESTION_TYPES = Object.keys(QUESTION_SPECS) as QuestionType[];
 
 interface PlayerInternal {
   id: string;
@@ -23,8 +76,16 @@ interface PlayerInternal {
 
 interface Prediction {
   team: TeamCode;
-  /** Odds snapshot when the player locked in — determines their payout. */
+  /** Odds snapshot at lock-in — determines the payout for odds-based questions. */
   odds: number;
+}
+
+interface QuestionInternal {
+  id: string;
+  type: QuestionType;
+  text: string;
+  openedAtMinute: number;
+  lockAtMinute: number;
 }
 
 type JoinResult = { ok: true; playerId: string } | { ok: false; error: string };
@@ -38,13 +99,16 @@ export class Session {
   private minute = 0;
   private score: Record<TeamCode, number> = { ENG: 0, MEX: 0 };
   private odds: NextGoalOdds = { ...INITIAL_ODDS };
-  private feed: SessionState["feed"] = [];
-  private question: ActiveQuestion | null = null;
-  private predictions = new Map<string, Prediction>();
-  private lastResult: QuestionResult | null = null;
+  private feed: MatchEvent[] = [];
+  private active: QuestionInternal | null = null;
+  private pending: QuestionInternal[] = [];
+  private predictions = new Map<string, Map<string, Prediction>>();
+  private results: QuestionResult[] = [];
   private winners: string[] | null = null;
   private matchFeed: MatchFeed | null = null;
   private questionCount = 0;
+  private nextOpenMinute = 0;
+  private lastType: QuestionType | null = null;
 
   constructor(
     readonly code: string,
@@ -90,25 +154,23 @@ export class Session {
     }
 
     this.status = "live";
-    this.openQuestion();
+    this.nextOpenMinute = FIRST_QUESTION_DELAY();
     this.matchFeed = feed;
     this.matchFeed.start({
-      onMinute: (minute) => {
-        this.minute = minute;
-        this.notify(this);
-      },
+      onMinute: (minute) => this.handleMinute(minute),
       onEvent: (event) => this.handleFeedEvent(event),
     });
     return { ok: true };
   }
 
   submitPrediction(playerId: string, questionId: string, team: TeamCode): ActionResult {
-    if (this.status !== "live" || !this.question || this.question.id !== questionId)
+    if (this.status !== "live" || !this.active || this.active.id !== questionId)
       return { ok: false, error: "That question is closed." };
     if (!this.players.has(playerId)) return { ok: false, error: "You are not in this session." };
-    if (this.predictions.has(playerId)) return { ok: false, error: "You already locked in." };
+    const answers = this.predictions.get(questionId)!;
+    if (answers.has(playerId)) return { ok: false, error: "You already locked in." };
 
-    this.predictions.set(playerId, { team, odds: this.odds[team] });
+    answers.set(playerId, { team, odds: this.odds[team] });
     this.notify(this);
     return { ok: true };
   }
@@ -124,6 +186,26 @@ export class Session {
     this.matchFeed?.stop();
   }
 
+  // ---- match loop -------------------------------------------------------
+
+  private handleMinute(minute: number) {
+    this.minute = minute;
+    if (this.status !== "live") return;
+
+    // Lock the active question once its answer window closes.
+    if (this.active && minute >= this.active.lockAtMinute) {
+      this.pending.push(this.active);
+      this.active = null;
+    }
+
+    // Pop a new question at the randomly scheduled minute.
+    if (!this.active && minute >= this.nextOpenMinute && minute <= LAST_QUESTION_MINUTE) {
+      this.openQuestion(minute);
+    }
+
+    this.notify(this);
+  }
+
   private handleFeedEvent(event: FeedEvent) {
     switch (event.kind) {
       case "ODDS":
@@ -132,12 +214,16 @@ export class Session {
       case "GOAL":
         this.score[event.team] += 1;
         this.feed.push(event);
-        this.resolveQuestion(event.team, event.scorer, event.minute);
-        this.openQuestion();
+        this.resolveMatching(event);
+        break;
+      case "CARD":
+      case "CORNER":
+        this.feed.push(event);
+        this.resolveMatching(event);
         break;
       case "FULL_TIME":
         this.feed.push(event);
-        this.voidQuestion(event.minute);
+        this.voidAll(event.minute);
         this.finish();
         break;
       default:
@@ -146,39 +232,89 @@ export class Session {
     this.notify(this);
   }
 
-  private openQuestion() {
+  // ---- question engine --------------------------------------------------
+
+  private openQuestion(minute: number) {
+    // Random type — but a type with an unresolved question stays off the board,
+    // and we avoid repeating the previous type when there's a choice.
+    const openTypes = new Set(this.pending.map((q) => q.type));
+    let pool = QUESTION_TYPES.filter((t) => !openTypes.has(t));
+    if (pool.length === 0) {
+      this.nextOpenMinute = minute + 3; // everything pending — try again shortly
+      return;
+    }
+    if (pool.length > 1 && this.lastType) pool = pool.filter((t) => t !== this.lastType);
+    const type = pool[Math.floor(Math.random() * pool.length)];
+    this.lastType = type;
+
     this.questionCount += 1;
-    this.question = {
-      id: `q${this.questionCount}`,
-      text: "Who scores the next goal?",
-      openedAtMinute: this.minute,
+    const id = `q${this.questionCount}`;
+    this.active = {
+      id,
+      type,
+      text: QUESTION_SPECS[type].text,
+      openedAtMinute: minute,
+      lockAtMinute: minute + ANSWER_WINDOW,
     };
-    this.predictions.clear();
+    this.predictions.set(id, new Map());
+    this.nextOpenMinute = minute + QUESTION_GAP();
   }
 
-  private resolveQuestion(team: TeamCode, scorer: string, minute: number) {
-    if (!this.question) return;
-    const entries = [...this.predictions.entries()].map(([playerId, prediction]) => {
-      const points =
-        prediction.team === team ? Math.round(BASE_POINTS * prediction.odds) : 0;
-      if (points > 0) this.players.get(playerId)!.score += points;
-      return { playerId, team: prediction.team, points };
-    });
-    this.lastResult = { questionId: this.question.id, team, scorer, minute, entries };
-    this.question = null;
+  /** Settle every open question (active + pending) that this event answers. */
+  private resolveMatching(event: MatchEvent) {
+    const settle = (q: QuestionInternal): boolean => {
+      const spec = QUESTION_SPECS[q.type];
+      const winner = spec.matches(event);
+      if (!winner) return false;
+
+      const answers = this.predictions.get(q.id) ?? new Map<string, Prediction>();
+      const entries = [...answers.entries()].map(([playerId, prediction]) => {
+        const correct = prediction.team === winner;
+        const points = !correct
+          ? 0
+          : spec.usesOdds
+            ? Math.round(BASE_POINTS * prediction.odds)
+            : FLAT_POINTS;
+        if (points > 0) this.players.get(playerId)!.score += points;
+        return { playerId, team: prediction.team, points };
+      });
+      this.results.push({
+        questionId: q.id,
+        type: q.type,
+        text: q.text,
+        team: winner,
+        headline: spec.headline(event),
+        minute: event.minute,
+        entries,
+      });
+      this.predictions.delete(q.id);
+      return true;
+    };
+
+    this.pending = this.pending.filter((q) => !settle(q));
+    // An event in the same minute the question opened would settle it before
+    // anyone could answer — let that question wait for the next occurrence.
+    if (this.active && event.minute > this.active.openedAtMinute && settle(this.active)) {
+      this.active = null;
+    }
   }
 
-  private voidQuestion(minute: number) {
-    if (!this.question) return;
-    this.lastResult = {
-      questionId: this.question.id,
-      team: null,
-      scorer: null,
-      minute,
-      entries: [],
-    };
-    this.question = null;
-    this.predictions.clear();
+  private voidAll(minute: number) {
+    const open = [...this.pending, ...(this.active ? [this.active] : [])];
+    for (const q of open) {
+      this.results.push({
+        questionId: q.id,
+        type: q.type,
+        text: q.text,
+        team: null,
+        headline: "Full time — question voided.",
+        minute,
+        entries: [],
+      });
+      this.predictions.delete(q.id);
+    }
+    this.pending = [];
+    this.active = null;
   }
 
   private finish() {
@@ -191,6 +327,12 @@ export class Session {
   }
 
   toState(): SessionState {
+    const activeState: ActiveQuestion | null = this.active ? { ...this.active } : null;
+    const pendingState: PendingQuestion[] = this.pending.map((q) => ({
+      id: q.id,
+      type: q.type,
+      text: q.text,
+    }));
     return {
       code: this.code,
       status: this.status,
@@ -200,11 +342,16 @@ export class Session {
       score: { ...this.score },
       odds: { ...this.odds },
       feed: [...this.feed],
-      question: this.question,
+      question: activeState,
+      pendingQuestions: pendingState,
       predictions: Object.fromEntries(
-        [...this.predictions.entries()].map(([id, p]) => [id, p.team]),
+        [...this.predictions.entries()].map(([qid, answers]) => [
+          qid,
+          Object.fromEntries([...answers.entries()].map(([pid, p]) => [pid, p.team])),
+        ]),
       ),
-      lastResult: this.lastResult,
+      lastResult: this.results.length > 0 ? this.results[this.results.length - 1] : null,
+      results: [...this.results],
       winners: this.winners,
     };
   }
