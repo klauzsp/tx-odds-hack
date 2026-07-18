@@ -337,8 +337,6 @@ function HomeScreen(props: {
   const now = useCurrentTime();
   const selectedFixture =
     DEMO_FIXTURES.find((fixture) => fixture.id === props.fixtureId) ?? DEMO_FIXTURES[0];
-  const historical = DEMO_FIXTURES.filter((fixture) => fixture.status === "historical");
-  const upcoming = DEMO_FIXTURES.filter((fixture) => fixture.status === "upcoming");
 
   return (
     <main className="shell">
@@ -367,44 +365,18 @@ function HomeScreen(props: {
         <label className="field">
           <span>Choose a match</span>
           <select
+            className="matchSelect"
             value={props.fixtureId}
             onChange={(event) => props.setFixtureId(Number(event.target.value))}
           >
-            <optgroup label="Historical replays">
-              {historical.map((fixture) => (
-                <option key={fixture.id} value={fixture.id}>
-                  {fixture.home.flag} {fixture.home.name} vs {fixture.away.name}{" "}
-                  {fixture.away.flag}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Upcoming matches">
-              {upcoming.map((fixture) => (
-                <option key={fixture.id} value={fixture.id}>
-                  {fixture.stage ? `${fixture.stage}: ` : ""}
-                  {fixture.home.flag} {fixture.home.name} vs {fixture.away.name}{" "}
-                  {fixture.away.flag} · {fixtureCountdown(fixture, now)}
-                </option>
-              ))}
-            </optgroup>
+            {DEMO_FIXTURES.map((fixture) => (
+              <option key={fixture.id} value={fixture.id}>
+                {fixture.home.flag} {fixture.home.name} vs {fixture.away.name}{" "}
+                {fixture.away.flag} · {fixtureTimeStatus(fixture, now)}
+              </option>
+            ))}
           </select>
         </label>
-
-        <div className={`fixturePreview ${selectedFixture.status}`}>
-          <span className="fixturePreviewTeams">
-            {selectedFixture.home.flag} {selectedFixture.home.name}
-            <span className="muted"> vs </span>
-            {selectedFixture.away.name} {selectedFixture.away.flag}
-          </span>
-          <span className="fixturePreviewMeta">
-            {selectedFixture.status === "historical"
-              ? "Historical replay · full match data"
-              : upcomingFixtureLabel(selectedFixture, now)}
-          </span>
-          {selectedFixture.startsAt && (
-            <span className="fixtureDate">{formatFixtureDate(selectedFixture.startsAt)}</span>
-          )}
-        </div>
 
         <label className="field">
           <span>Your name</span>
@@ -690,6 +662,12 @@ function fixtureCountdown(fixture: GameFixture, now: number): string {
   return `in ${parts.join(" ")}`;
 }
 
+function fixtureTimeStatus(fixture: GameFixture, now: number): "PAST" | "PRESENT" | "FUTURE" {
+  if (fixture.status === "historical") return "PAST";
+  if (fixture.startsAt && now >= fixture.startsAt) return "PRESENT";
+  return "FUTURE";
+}
+
 function fixtureEntryOpensAt(fixture: GameFixture): number {
   if (fixture.status === "historical" || !fixture.startsAt) return 0;
   return fixture.startsAt - ENTRY_WINDOW_MS;
@@ -713,14 +691,6 @@ function upcomingFixtureLabel(fixture: GameFixture, now: number): string {
   const stage = fixture.stage ?? "Upcoming match";
   if (!fixture.startsAt || now >= fixture.startsAt) return `${stage} · live feed ready`;
   return `${stage} · pending · ${fixtureCountdown(fixture, now)}`;
-}
-
-function formatFixtureDate(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(timestamp);
 }
 
 function MatchScreen(props: {
