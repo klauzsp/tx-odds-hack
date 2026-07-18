@@ -74,6 +74,8 @@ io.on("connection", (socket) => {
     const session = socket.data.code ? store.get(socket.data.code) : undefined;
     if (!session || !socket.data.playerId)
       return cb({ ok: false, error: "Join a session first." });
+    const readinessError = session.startReadinessError(socket.data.playerId);
+    if (readinessError) return cb({ ok: false, error: readinessError });
     const escrowError = await verifyEscrowReady(session.toState());
     if (escrowError) return cb({ ok: false, error: escrowError });
     cb(session.start(socket.data.playerId));

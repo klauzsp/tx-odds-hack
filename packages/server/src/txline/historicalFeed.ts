@@ -1,12 +1,11 @@
 import type { FeedEvent, GameFixture, NextGoalOdds, TeamCode } from "@nextgoal/shared";
 import type { FeedHandlers, MatchFeed } from "../feed";
 import { SimulatedFeed } from "../simulatedFeed";
-import { MS_PER_MINUTE } from "../fixture";
 import { apiGet, dataHeaders, ensureAuth, type TxLineAuth } from "./auth";
 import { networkConfig } from "./config";
 import { mapNextGoalOdds, type ParticipantTeams, type Rec } from "./feed";
 
-// Replays a finished match from real TxLINE data (FEED=txline-history).
+// Replays a finished match from real TxLINE data.
 //
 // /scores/historical/{fixtureId} returns the full recorded soccer feed as SSE
 // lines: kickoff, goals (with Stats key 1/2 = participant total goals, and a
@@ -16,6 +15,7 @@ import { mapNextGoalOdds, type ParticipantTeams, type Rec } from "./feed";
 // /odds/snapshot/{fixtureId}?asOf=<wall clock ts> sampled across the match.
 
 const ODDS_SAMPLE_MINUTES = 5;
+const MS_PER_MINUTE = Number(process.env.MS_PER_MINUTE ?? 800);
 
 export class TxLineHistoricalFeed implements MatchFeed {
   private inner: SimulatedFeed | null = null;

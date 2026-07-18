@@ -14,9 +14,9 @@ import type {
 } from "@nextgoal/shared";
 import { DEMO_FIXTURES } from "@nextgoal/shared";
 import { createFeed, type MatchFeed } from "./feed";
-import { INITIAL_ODDS } from "./fixture";
 
 const MAX_PLAYERS = 2;
+const INITIAL_ODDS: NextGoalOdds = { HOME: 2.9, AWAY: 1.72 };
 /** Goal questions pay 100 × the TXODDS-derived odds at lock-in. */
 const BASE_POINTS = 100;
 /** Card/corner questions pay a flat rate (no TXODDS market for them yet). */
@@ -151,10 +151,8 @@ export class Session {
   }
 
   start(playerId: string): ActionResult {
-    if (this.status !== "lobby") return { ok: false, error: "Match already started." };
-    if (playerId !== this.hostId) return { ok: false, error: "Only the host can kick off." };
-    if (this.players.size < MAX_PLAYERS)
-      return { ok: false, error: "Waiting for your friend to join." };
+    const readinessError = this.startReadinessError(playerId);
+    if (readinessError) return { ok: false, error: readinessError };
 
     let feed: MatchFeed;
     try {
@@ -171,6 +169,20 @@ export class Session {
       onEvent: (event) => this.handleFeedEvent(event),
     });
     return { ok: true };
+  }
+
+  startReadinessError(playerId: string): string | null {
+    if (this.status !== "lobby") return "Match already started.";
+    if (playerId !== this.hostId) return "Only the host can kick off.";
+    if (this.players.size < MAX_PLAYERS) return "Waiting for your friend to join.";
+    if (
+      this.fixture.status === "upcoming" &&
+      this.fixture.startsAt &&
+      Date.now() < this.fixture.startsAt
+    ) {
+      return `${this.fixture.home.name} vs ${this.fixture.away.name} starts ${formatTimeUntil(this.fixture.startsAt)}.`;
+    }
+    return null;
   }
 
   submitPrediction(playerId: string, questionId: string, team: TeamCode): ActionResult {
@@ -378,6 +390,19 @@ export class Session {
       payoutSignature: this.payoutSignature,
     };
   }
+}
+
+function formatTimeUntil(timestamp: number): string {
+  const totalMinutes = Math.max(1, Math.ceil((timestamp - Date.now()) / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    minutes && !days ? `${minutes}m` : "",
+  ].filter(Boolean);
+  return `in ${parts.join(" ")}`;
 }
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";

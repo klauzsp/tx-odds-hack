@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
-import { DEMO_FIXTURES, ENTRY_LAMPORTS, TEAM_CODES } from "@nextgoal/shared";
+import type { GameFixture, QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
+import {
+  DEMO_FIXTURES,
+  ENTRY_LAMPORTS,
+  ENTRY_WINDOW_MS,
+  TEAM_CODES,
+} from "@nextgoal/shared";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   ensureEscrowDeposit,
@@ -54,20 +59,41 @@ export default function GameClient() {
   useEffect(() => {
     if (!state?.escrowId || !wallet) return;
     let active = true;
+    let timer: number | null = null;
+    let openingTimer: number | null = null;
     const refresh = () => {
       getEscrowSnapshot(connection, wallet, state.escrowId)
         .then((snapshot) => active && setEscrow(snapshot))
         .catch(() => active && setEscrow(null));
     };
-    refresh();
-    // A deposit does not pass through Socket.IO, so lobby clients poll the PDA
-    // briefly to enable kickoff as soon as another wallet funds its entry.
-    const timer = state.status === "lobby" ? window.setInterval(refresh, 2_500) : null;
+    const beginPolling = () => {
+      refresh();
+      // A deposit does not pass through Socket.IO, so lobby clients poll the
+      // PDA to enable kickoff as soon as another wallet funds its entry.
+      if (state.status === "lobby") timer = window.setInterval(refresh, 2_500);
+    };
+
+    const opensAt = fixtureEntryOpensAt(state.fixture);
+    if (state.status === "lobby" && opensAt > Date.now()) {
+      setEscrow(null);
+      openingTimer = window.setTimeout(beginPolling, opensAt - Date.now());
+    } else {
+      beginPolling();
+    }
+
     return () => {
       active = false;
       if (timer) window.clearInterval(timer);
+      if (openingTimer) window.clearTimeout(openingTimer);
     };
-  }, [connection, state?.escrowId, state?.status, wallet]);
+  }, [
+    connection,
+    state?.escrowId,
+    state?.fixture.startsAt,
+    state?.fixture.status,
+    state?.status,
+    wallet,
+  ]);
 
   const fundPrizePool = async (session: SessionState, id: string) => {
     if (!wallet) return setError("Connect your Phantom wallet first.");
@@ -97,7 +123,9 @@ export default function GameClient() {
       joinedRef.current = { code: ack.code, name, wallet: walletAddress };
       setPlayerId(ack.playerId);
       setState(ack.state);
-      void fundPrizePool(ack.state, ack.playerId);
+      if (ack.state.fixture.status === "historical") {
+        void fundPrizePool(ack.state, ack.playerId);
+      }
     });
   };
 
@@ -113,7 +141,9 @@ export default function GameClient() {
         joinedRef.current = { code: ack.code, name, wallet: walletAddress };
         setPlayerId(ack.playerId);
         setState(ack.state);
-        void fundPrizePool(ack.state, ack.playerId);
+        if (ack.state.fixture.status === "historical") {
+          void fundPrizePool(ack.state, ack.playerId);
+        }
       },
     );
   };
@@ -189,6 +219,12 @@ function HomeScreen(props: {
   chainBusy: boolean;
   error: string | null;
 }) {
+  const now = useCurrentTime();
+  const selectedFixture =
+    DEMO_FIXTURES.find((fixture) => fixture.id === props.fixtureId) ?? DEMO_FIXTURES[0];
+  const historical = DEMO_FIXTURES.filter((fixture) => fixture.status === "historical");
+  const upcoming = DEMO_FIXTURES.filter((fixture) => fixture.status === "upcoming");
+
   return (
     <main className="shell">
       <div className="hero">
@@ -204,18 +240,46 @@ function HomeScreen(props: {
 
       <div className="card">
         <label className="field">
-          <span>Choose a match replay</span>
+          <span>Choose a match</span>
           <select
             value={props.fixtureId}
             onChange={(event) => props.setFixtureId(Number(event.target.value))}
           >
-            {DEMO_FIXTURES.map((fixture) => (
-              <option key={fixture.id} value={fixture.id}>
-                {fixture.home.flag} {fixture.home.name} vs {fixture.away.name} {fixture.away.flag}
-              </option>
-            ))}
+            <optgroup label="Historical replays">
+              {historical.map((fixture) => (
+                <option key={fixture.id} value={fixture.id}>
+                  {fixture.home.flag} {fixture.home.name} vs {fixture.away.name}{" "}
+                  {fixture.away.flag}
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Upcoming matches">
+              {upcoming.map((fixture) => (
+                <option key={fixture.id} value={fixture.id}>
+                  {fixture.stage ? `${fixture.stage}: ` : ""}
+                  {fixture.home.flag} {fixture.home.name} vs {fixture.away.name}{" "}
+                  {fixture.away.flag} · {fixtureCountdown(fixture, now)}
+                </option>
+              ))}
+            </optgroup>
           </select>
         </label>
+
+        <div className={`fixturePreview ${selectedFixture.status}`}>
+          <span className="fixturePreviewTeams">
+            {selectedFixture.home.flag} {selectedFixture.home.name}
+            <span className="muted"> vs </span>
+            {selectedFixture.away.name} {selectedFixture.away.flag}
+          </span>
+          <span className="fixturePreviewMeta">
+            {selectedFixture.status === "historical"
+              ? "Historical replay · full match data"
+              : upcomingFixtureLabel(selectedFixture, now)}
+          </span>
+          {selectedFixture.startsAt && (
+            <span className="fixtureDate">{formatFixtureDate(selectedFixture.startsAt)}</span>
+          )}
+        </div>
 
         <label className="field">
           <span>Your name</span>
@@ -232,7 +296,11 @@ function HomeScreen(props: {
           onClick={props.onCreate}
           disabled={!props.name.trim() || !props.walletConnected || props.chainBusy}
         >
-          {props.walletConnected ? "Create a session · 0.1 SOL" : "Connect wallet to play"}
+          {!props.walletConnected
+            ? "Connect wallet to play"
+            : selectedFixture.status === "upcoming"
+              ? "Create pending session · no deposit yet"
+              : "Create a session · 0.1 SOL"}
         </button>
 
         <div className="divider">or join a friend</div>
@@ -275,13 +343,22 @@ function LobbyScreen(props: {
   error: string | null;
 }) {
   const { state, playerId } = props;
+  const now = useCurrentTime();
   const isHost = playerId === state.hostId;
   const me = state.players.find((player) => player.id === playerId);
   const deposited = Boolean(me && props.escrow?.depositors.includes(me.wallet));
   const allDeposited = state.players.every((player) =>
     props.escrow?.depositors.includes(player.wallet),
   );
-  const ready = state.players.length >= 2 && allDeposited;
+  const waitingForKickoff = Boolean(
+    state.fixture.status === "upcoming" &&
+      state.fixture.startsAt &&
+      now < state.fixture.startsAt,
+  );
+  const entryOpensAt = fixtureEntryOpensAt(state.fixture);
+  const entryOpen = now >= entryOpensAt;
+  const waitingForHostEscrow = entryOpen && !isHost && !props.escrow;
+  const ready = state.players.length >= 2 && allDeposited && !waitingForKickoff;
 
   return (
     <main className="shell">
@@ -317,6 +394,11 @@ function LobbyScreen(props: {
             {state.fixture.away.name} {state.fixture.away.flag}
           </span>
         </div>
+        <p className={`fixtureTiming ${state.fixture.status}`}>
+          {state.fixture.status === "historical"
+            ? "Historical replay"
+            : upcomingFixtureLabel(state.fixture, now)}
+        </p>
 
         <div className="escrowPanel">
           <div>
@@ -326,15 +408,27 @@ function LobbyScreen(props: {
             </strong>
           </div>
           <span className={`fundingStatus ${deposited ? "funded" : ""}`}>
-            {deposited ? "Your entry is funded ✓" : "Entry not funded"}
+            {deposited
+              ? "Your entry is funded ✓"
+              : entryOpen
+                ? "Entry not funded"
+                : `Deposits open ${formatTimeUntil(entryOpensAt, now)}`}
           </span>
         </div>
 
         {!deposited && (
-          <button className="btn" onClick={props.onDeposit} disabled={props.chainBusy}>
+          <button
+            className="btn"
+            onClick={props.onDeposit}
+            disabled={props.chainBusy || !entryOpen || waitingForHostEscrow}
+          >
             {props.chainBusy
               ? "Confirming on Solana…"
-              : `Deposit ${(ENTRY_LAMPORTS / 1_000_000_000).toFixed(1)} SOL`}
+              : !entryOpen
+                ? `Deposits open ${formatTimeUntil(entryOpensAt, now)}`
+                : waitingForHostEscrow
+                  ? "Waiting for host to open prize pool…"
+                  : `Deposit ${(ENTRY_LAMPORTS / 1_000_000_000).toFixed(1)} SOL`}
           </button>
         )}
 
@@ -342,6 +436,8 @@ function LobbyScreen(props: {
           <button className="btn primary" onClick={props.onStart} disabled={!ready}>
             {ready
               ? "Kick off ⚽"
+              : waitingForKickoff
+                ? `Starts ${fixtureCountdown(state.fixture, now)}`
               : state.players.length < 2
                 ? "Waiting for a second player…"
                 : "Waiting for both deposits…"}
@@ -354,6 +450,65 @@ function LobbyScreen(props: {
       </div>
     </main>
   );
+}
+
+function useCurrentTime(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
+
+function fixtureCountdown(fixture: GameFixture, now: number): string {
+  if (!fixture.startsAt) return "available now";
+  const remaining = fixture.startsAt - now;
+  if (remaining <= 0) return "live now";
+
+  const totalMinutes = Math.max(1, Math.ceil(remaining / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    minutes && !days ? `${minutes}m` : "",
+  ].filter(Boolean);
+  return `in ${parts.join(" ")}`;
+}
+
+function fixtureEntryOpensAt(fixture: GameFixture): number {
+  if (fixture.status === "historical" || !fixture.startsAt) return 0;
+  return fixture.startsAt - ENTRY_WINDOW_MS;
+}
+
+function formatTimeUntil(timestamp: number, now: number): string {
+  const totalMinutes = Math.max(1, Math.ceil((timestamp - now) / 60_000));
+  const days = Math.floor(totalMinutes / 1_440);
+  const hours = Math.floor((totalMinutes % 1_440) / 60);
+  const minutes = totalMinutes % 60;
+  return `in ${[
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    minutes && !days ? `${minutes}m` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")}`;
+}
+
+function upcomingFixtureLabel(fixture: GameFixture, now: number): string {
+  const stage = fixture.stage ?? "Upcoming match";
+  if (!fixture.startsAt || now >= fixture.startsAt) return `${stage} · live feed ready`;
+  return `${stage} · pending · ${fixtureCountdown(fixture, now)}`;
+}
+
+function formatFixtureDate(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
 }
 
 function MatchScreen(props: {

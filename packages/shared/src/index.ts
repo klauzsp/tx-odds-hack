@@ -15,34 +15,60 @@ export interface GameFixture {
   id: number;
   home: FixtureTeam;
   away: FixtureTeam;
+  status: "historical" | "upcoming";
+  startsAt?: number;
+  stage?: string;
 }
 
 /** Curated, verified TxLINE replays for the hackathon selector. */
 export const DEMO_FIXTURES: GameFixture[] = [
   {
     id: 18192996,
+    status: "historical",
     home: { id: 2545, name: "Mexico", flag: "🇲🇽" },
     away: { id: 1888, name: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
   },
   {
     id: 18193785,
+    status: "historical",
     home: { id: 3220, name: "USA", flag: "🇺🇸" },
     away: { id: 1575, name: "Belgium", flag: "🇧🇪" },
   },
   {
     id: 18198205,
+    status: "historical",
     home: { id: 2802, name: "Portugal", flag: "🇵🇹" },
     away: { id: 3021, name: "Spain", flag: "🇪🇸" },
   },
   {
     id: 18209181,
+    status: "historical",
     home: { id: 1999, name: "France", flag: "🇫🇷" },
     away: { id: 2530, name: "Morocco", flag: "🇲🇦" },
+  },
+  {
+    id: 18257865,
+    status: "upcoming",
+    startsAt: 1_784_408_400_000,
+    stage: "Third-place play-off",
+    home: { id: 1999, name: "France", flag: "🇫🇷" },
+    away: { id: 1888, name: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+  },
+  {
+    id: 18257739,
+    status: "upcoming",
+    startsAt: 1_784_487_600_000,
+    stage: "Final",
+    home: { id: 3021, name: "Spain", flag: "🇪🇸" },
+    away: { id: 1489, name: "Argentina", flag: "🇦🇷" },
   },
 ];
 
 /** 0.1 SOL per player on devnet. The escrow stores this value on initialization. */
 export const ENTRY_LAMPORTS = 100_000_000;
+
+/** Upcoming sessions accept escrow deposits only during the final 15 minutes before kickoff. */
+export const ENTRY_WINDOW_MS = 15 * 60 * 1_000;
 
 /** Decimal odds for "which team scores the next goal". */
 export type NextGoalOdds = Record<TeamCode, number>;

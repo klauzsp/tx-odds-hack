@@ -1,6 +1,4 @@
 import type { FeedEvent, GameFixture } from "@nextgoal/shared";
-import { SimulatedFeed } from "./simulatedFeed";
-import { FIXTURE, MS_PER_MINUTE } from "./fixture";
 import { TxLineFeed } from "./txline/feed";
 import { TxLineHistoricalFeed } from "./txline/historicalFeed";
 
@@ -16,16 +14,10 @@ export interface MatchFeed {
 }
 
 /**
- * FEED=sim            (default) replays the bundled hand-written fixture
- * FEED=txline-history replays real TxLINE data for a finished match
- * FEED=txline         consumes the live TxLINE SSE streams
+ * The selected fixture is the sole source-of-truth for routing. Completed
+ * fixtures replay TxLINE history; upcoming fixtures use TxLINE live streams.
  */
 export function createFeed(fixture: GameFixture): MatchFeed {
-  if (process.env.FEED === "txline") {
-    return new TxLineFeed(fixture.id);
-  }
-  if (process.env.FEED === "txline-history") {
-    return new TxLineHistoricalFeed(fixture);
-  }
-  return new SimulatedFeed(FIXTURE, MS_PER_MINUTE);
+  if (fixture.status === "historical") return new TxLineHistoricalFeed(fixture);
+  return new TxLineFeed(fixture.id);
 }
