@@ -10,6 +10,11 @@
   },
   "dependencies": {
     "@nextgoal/shared": "workspace:*",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-phantom": "^0.9.29",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/web3.js": "^1.98.4",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
