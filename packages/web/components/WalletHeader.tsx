@@ -1,12 +1,13 @@
 "use client";
 
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import MatchPotLogo from "./MatchPotLogo";
 
 export default function WalletHeader() {
   return (
     <header className="walletHeader">
       <a className="brand" href="/" aria-label="MatchPot home">
-        <span className="brandBall" aria-hidden="true">⚽</span>
+        <MatchPotLogo size="nav" />
         <span className="brandWord">
           Match<em>Pot</em>
         </span>

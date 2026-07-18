@@ -16,6 +16,7 @@ import {
   getEscrowSnapshot,
   type EscrowSnapshot,
 } from "../lib/escrow";
+import MatchPotLogo from "./MatchPotLogo";
 
 const QUESTION_EMOJI: Record<QuestionType, string> = {
   NEXT_GOAL: "⚽",
@@ -353,9 +354,7 @@ function HomeScreen(props: {
   return (
     <main className="shell">
       <div className="hero">
-        <div className="worldCupMark" aria-hidden="true">
-          <span>🏆</span>
-        </div>
+        <MatchPotLogo size="hero" />
         <span className="badge">World Cup 2026 · powered by TXODDS</span>
         <h1>
           Match<span className="accent">Pot</span>

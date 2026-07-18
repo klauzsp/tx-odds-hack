@@ -75,16 +75,29 @@ body {
   gap: 9px;
 }
 
-.brandBall {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid rgba(246, 196, 83, 0.38);
-  border-radius: 50%;
-  background: var(--gold-dim);
-  font-size: 17px;
-  box-shadow: 0 0 24px rgba(246, 196, 83, 0.13);
+.matchPotLogo {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.matchPotLogo img {
+  object-fit: contain;
+  transform: scale(1.72);
+}
+
+.matchPotLogo--nav {
+  width: 44px;
+  height: 44px;
+  filter: drop-shadow(0 0 12px rgba(53, 212, 125, 0.2));
+}
+
+.matchPotLogo--hero {
+  width: 156px;
+  height: 156px;
+  margin-bottom: -14px;
+  filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.42));
 }
 
 .brandWord em {
@@ -197,21 +210,6 @@ h3,
   flex-direction: column;
   gap: 12px;
   align-items: center;
-}
-
-.worldCupMark {
-  width: 62px;
-  height: 62px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(246, 196, 83, 0.38);
-  border-radius: 50% 50% 44% 44%;
-  background:
-    radial-gradient(circle at 50% 32%, rgba(246, 196, 83, 0.23), transparent 58%),
-    rgba(5, 11, 24, 0.72);
-  color: var(--gold);
-  font-size: 29px;
-  box-shadow: 0 0 42px rgba(246, 196, 83, 0.14);
 }
 
 .badge {
