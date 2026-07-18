@@ -3,7 +3,7 @@ services:
     name: matchpot-server
     runtime: node
     plan: free
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    buildCommand: pnpm install --frozen-lockfile
     startCommand: pnpm --filter @matchpot/server start
     healthCheckPath: /
     envVars:
