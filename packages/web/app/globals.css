@@ -34,7 +34,7 @@ body {
     linear-gradient(180deg, #0c1830 0%, var(--bg) 48%, #07140f 100%);
   background-attachment: fixed;
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-body), "Segoe UI", sans-serif;
   min-height: 100vh;
   overscroll-behavior-y: none;
 }
@@ -90,6 +90,24 @@ body {
 .brandWord em {
   color: var(--accent);
   font-style: normal;
+}
+
+.brandWord,
+h1,
+h2,
+h3,
+.sessionCode,
+.scoreLine,
+.clock,
+.questionText,
+.resultHeadline,
+.trophy {
+  font-family: var(--font-display), "Arial Narrow", sans-serif;
+}
+
+.brandWord {
+  font-size: 24px;
+  letter-spacing: 0.01em;
 }
 
 .brandTournament {
@@ -208,8 +226,8 @@ body {
 }
 
 .hero h1 {
-  font-size: 52px;
-  letter-spacing: -0.045em;
+  font-size: 60px;
+  letter-spacing: -0.015em;
   line-height: 1;
   text-shadow: 0 8px 36px rgba(0, 0, 0, 0.42);
 }
