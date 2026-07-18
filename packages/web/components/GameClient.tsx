@@ -343,6 +343,9 @@ function HomeScreen(props: {
   return (
     <main className="shell">
       <div className="hero">
+        <div className="worldCupMark" aria-hidden="true">
+          <span>🏆</span>
+        </div>
         <span className="badge">World Cup 2026 · powered by TXODDS</span>
         <h1>
           Match<span className="accent">Pot</span>
@@ -351,6 +354,13 @@ function HomeScreen(props: {
           Call the next goal before your friends do. Correct picks pay out points at live
           odds — most points at full time takes the pot.
         </p>
+        <div className="hostStrip" aria-label="Hosted across Canada, Mexico and USA">
+          <span>🇨🇦 Canada</span>
+          <i />
+          <span>🇲🇽 Mexico</span>
+          <i />
+          <span>🇺🇸 USA</span>
+        </div>
       </div>
 
       <div className="card">
