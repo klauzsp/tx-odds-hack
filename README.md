@@ -39,12 +39,12 @@ Build and deploy it to devnet:
 
 ```bash
 pnpm anchor:build
-solana config set --url devnet
-solana balance
-anchor deploy --provider.cluster devnet
+pnpm anchor:deploy:devnet
 ```
 
-The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. Keep `target/deploy/nextgoal_escrow-keypair.json` safe: it is intentionally gitignored and controls that program address. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
+The configured program ID is `Diu1knrbYFraN5oSzjEW2RBjRW1obVo2iNz7vHDVrLET`. The canonical program keypair is `_keys/nextgoal_escrow-program-keypair.json`; the build script restores it into the disposable `target/` directory before every build. The funded devnet deployer and upgrade authority is `_keys/devnet-test.json` (`CWgRwTdXuxsL4P8TayCyREcfgjzZU4UC7bLZeopNJN5r`). Both are intentionally gitignored: keep an encrypted off-machine backup of `_keys/` and never commit or share its contents.
+
+Initial deployment locks rent in the durable program account. Later upgrades reuse the same program and normally cost only transaction fees (plus a temporary deployment buffer), so the deployer should not need repeated large faucet top-ups. The app and server default to devnet; override the RPCs with `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` when testing locally.
 
 For a local money-flow test, start a validator with the compiled program and run:
 

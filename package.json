@@ -2,7 +2,8 @@
   "name": "nextgoal",
   "private": true,
   "scripts": {
-    "anchor:build": "anchor build",
+    "anchor:build": "./scripts/anchor-build.sh",
+    "anchor:deploy:devnet": "./scripts/anchor-deploy-devnet.sh",
     "dev": "pnpm --parallel -r run dev",
     "typecheck": "pnpm -r run typecheck"
   },
