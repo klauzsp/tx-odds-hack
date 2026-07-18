@@ -168,7 +168,8 @@ body {
   color: var(--muted);
 }
 
-input {
+input,
+select {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -178,7 +179,26 @@ input {
   outline: none;
 }
 
-input:focus {
+select {
+  width: 100%;
+  appearance: none;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 17px,
+    calc(100% - 13px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select option {
+  background: #111827;
+}
+
+input:focus,
+select:focus {
   border-color: var(--accent);
 }
 

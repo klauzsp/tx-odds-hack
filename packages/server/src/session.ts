@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type {
   ActiveQuestion,
+  GameFixture,
   FeedEvent,
   MatchEvent,
   NextGoalOdds,
@@ -11,7 +12,7 @@ import type {
   SessionStatus,
   TeamCode,
 } from "@nextgoal/shared";
-import { TEAMS } from "@nextgoal/shared";
+import { DEMO_FIXTURES } from "@nextgoal/shared";
 import { createFeed, type MatchFeed } from "./feed";
 import { INITIAL_ODDS } from "./fixture";
 
@@ -34,7 +35,7 @@ interface QuestionSpec {
   text: string;
   /** Returns the winning team if this event settles the question. */
   matches(event: MatchEvent): TeamCode | null;
-  headline(event: MatchEvent): string;
+  headline(event: MatchEvent, teamName: string): string;
   usesOdds: boolean;
 }
 
@@ -42,25 +43,26 @@ const QUESTION_SPECS: Record<QuestionType, QuestionSpec> = {
   NEXT_GOAL: {
     text: "Who scores the next goal?",
     matches: (e) => (e.kind === "GOAL" ? e.team : null),
-    headline: (e) =>
+    headline: (e, teamName) =>
       e.kind === "GOAL"
-        ? `⚽ ${e.scorer || "Goal"} — ${TEAMS[e.team].name} (${e.minute}')`
+        ? `⚽ ${e.scorer || "Goal"} — ${teamName} (${e.minute}')`
         : "",
     usesOdds: true,
   },
   NEXT_CARD: {
     text: "Which team picks up the next card?",
     matches: (e) => (e.kind === "CARD" ? e.team : null),
-    headline: (e) =>
+    headline: (e, teamName) =>
       e.kind === "CARD"
-        ? `${e.card === "red" ? "🟥" : "🟨"} ${e.player ? `${e.player} — ` : ""}${TEAMS[e.team].name} (${e.minute}')`
+        ? `${e.card === "red" ? "🟥" : "🟨"} ${e.player ? `${e.player} — ` : ""}${teamName} (${e.minute}')`
         : "",
     usesOdds: false,
   },
   NEXT_CORNER: {
     text: "Who wins the next corner?",
     matches: (e) => (e.kind === "CORNER" ? e.team : null),
-    headline: (e) => (e.kind === "CORNER" ? `🚩 Corner — ${TEAMS[e.team].name} (${e.minute}')` : ""),
+    headline: (e, teamName) =>
+      e.kind === "CORNER" ? `🚩 Corner — ${teamName} (${e.minute}')` : "",
     usesOdds: false,
   },
 };
@@ -98,7 +100,7 @@ export class Session {
 
   private players = new Map<string, PlayerInternal>();
   private minute = 0;
-  private score: Record<TeamCode, number> = { ENG: 0, MEX: 0 };
+  private score: Record<TeamCode, number> = { HOME: 0, AWAY: 0 };
   private odds: NextGoalOdds = { ...INITIAL_ODDS };
   private feed: MatchEvent[] = [];
   private active: QuestionInternal | null = null;
@@ -115,6 +117,7 @@ export class Session {
   constructor(
     readonly code: string,
     readonly escrowId: string,
+    readonly fixture: GameFixture,
     private readonly notify: (session: Session) => void,
   ) {}
 
@@ -155,7 +158,7 @@ export class Session {
 
     let feed: MatchFeed;
     try {
-      feed = createFeed();
+      feed = createFeed(this.fixture);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : "Feed unavailable." };
     }
@@ -296,7 +299,7 @@ export class Session {
         type: q.type,
         text: q.text,
         team: winner,
-        headline: spec.headline(event),
+        headline: spec.headline(event, this.teamName(winner)),
         minute: event.minute,
         entries,
       });
@@ -339,6 +342,10 @@ export class Session {
     this.matchFeed?.stop();
   }
 
+  private teamName(team: TeamCode): string {
+    return team === "HOME" ? this.fixture.home.name : this.fixture.away.name;
+  }
+
   toState(): SessionState {
     const activeState: ActiveQuestion | null = this.active ? { ...this.active } : null;
     const pendingState: PendingQuestion[] = this.pending.map((q) => ({
@@ -348,6 +355,7 @@ export class Session {
     }));
     return {
       code: this.code,
+      fixture: this.fixture,
       escrowId: this.escrowId,
       status: this.status,
       hostId: this.hostId,
@@ -379,7 +387,9 @@ export class SessionStore {
 
   constructor(private readonly notify: (session: Session) => void) {}
 
-  create(): Session {
+  create(fixtureId: number): Session | null {
+    const fixture = DEMO_FIXTURES.find((candidate) => candidate.id === fixtureId);
+    if (!fixture) return null;
     let code: string;
     do {
       code = Array.from(
@@ -389,7 +399,7 @@ export class SessionStore {
     } while (this.sessions.has(code));
     // The display code can eventually be reused; the escrow PDA seed cannot.
     const escrowId = randomBytes(32).toString("hex");
-    const session = new Session(code, escrowId, this.notify);
+    const session = new Session(code, escrowId, fixture, this.notify);
     this.sessions.set(code, session);
     return session;
   }

@@ -16,8 +16,8 @@ import type { EventSource } from "eventsource";
 // "unmapped" lines, and tighten `extractRecords`/`readStat` to the real shape.
 
 /** Which app team each TxLINE participant slot maps to (participant 1 is the home side). */
-const P1_TEAM = (process.env.TXLINE_P1_TEAM ?? "ENG") as TeamCode;
-const P2_TEAM = (process.env.TXLINE_P2_TEAM ?? "MEX") as TeamCode;
+const P1_TEAM: TeamCode = "HOME";
+const P2_TEAM: TeamCode = "AWAY";
 
 const GOAL_STAT_KEYS: Record<TeamCode, number> = { [P1_TEAM]: 1, [P2_TEAM]: 2 } as Record<
   TeamCode,
@@ -33,7 +33,7 @@ export interface ParticipantTeams {
 export class TxLineFeed implements MatchFeed {
   private sources: EventSource[] = [];
   private handlers: FeedHandlers | null = null;
-  private goals: Record<TeamCode, number> = { ENG: 0, MEX: 0 };
+  private goals: Record<TeamCode, number> = { HOME: 0, AWAY: 0 };
   private minute = 0;
   private kickedOff = false;
   private stopped = false;

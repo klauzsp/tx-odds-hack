@@ -2,13 +2,13 @@
 
 Live prediction battles for the World Cup, built for the TXODDS hackathon (consumer & fan experiences track). Friends join a session, get prompted with prediction questions during the match, and the player with the most points at full time takes the SOL prize pot.
 
-**Current build:** two players, England vs Mexico (real TxLINE data or simulation). Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 5-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time. Question types live in `QUESTION_SPECS` in `server/src/session.ts` — adding a new one is a spec entry plus (if needed) a new `MatchEvent` kind.
+**Current build:** two players choose one of four verified World Cup TxLINE replays when creating a session: Mexico–England, USA–Belgium, Portugal–Spain, or France–Morocco. Prediction questions pop up at random moments during the match — *Who scores the next goal?* (pays `100 × TXODDS-derived odds`, capped at 6×), *Which team picks up the next card?*, *Who wins the next corner?* (flat 150 pts). Each question has a 5-match-minute answer window, then locks and waits for its event to happen; unresolved questions void at full time.
 
 ## Run it
 
 ```bash
 pnpm install
-pnpm dev        # game server on :3001, Next.js on :3000
+FEED=txline-history pnpm dev  # game server on :3001, Next.js on :3000
 ```
 
 Open http://localhost:3000 in **two browser windows** (or one normal + one incognito). Create a session in one, join with the 4-letter code in the other, and the host kicks off. The match replays 90 minutes at ~800 ms per minute (≈72 s); tune with `MS_PER_MINUTE=2000 pnpm dev`.
@@ -24,7 +24,7 @@ programs/
   nextgoal_escrow/  Anchor program — one SOL escrow PDA per game session
 ```
 
-- **`server/src/feed.ts`** — feed abstraction. `FEED=sim` (default) replays the bundled England vs Mexico fixture; `FEED=txline` consumes the real TxLINE SSE streams.
+- **`server/src/feed.ts`** — feed abstraction. Every session owns its selected fixture and feed instance; `FEED=txline-history` replays its historical data and `FEED=txline` consumes live SSE streams for its fixture ID.
 - **`server/src/fixture.ts`** + **`simulatedFeed.ts`** — the demo replay: match events (goals, half-time) interleaved with next-goal odds ticks, one match minute per tick.
 - **`server/src/txline/`** — real [TxLINE](https://txline-docs.txodds.com/documentation/quickstart) integration (see below).
 - **`server/src/session.ts`** — all game rules: join/rejoin (the connected wallet reclaims its seat), question lifecycle (opens at kickoff and after every goal, resolved on the next goal, voided at full time), odds-weighted scoring, winner calculation. Session state lives in memory — persistence can be added behind `SessionStore` later without touching game logic.
@@ -71,14 +71,14 @@ pnpm txline:probe <fixtureId>                               # inspect one fixtur
 Then pick a feed mode:
 
 ```bash
-FEED=txline-history pnpm dev                 # ⭐ replay the REAL Mexico vs England match (fixture 18192996)
-FEED=txline TXLINE_FIXTURE_ID=<id> pnpm dev  # live match via the SSE streams
-pnpm dev                                     # hand-written simulation (no credentials needed)
+FEED=txline-history pnpm dev  # ⭐ choose one of four real historical matches in the UI
+FEED=txline pnpm dev          # consume live streams for the fixture selected by the session
+pnpm dev                      # hand-written Mexico–England simulation
 ```
 
-`txline-history` is the hackathon demo mode: it pulls the full recorded TxLINE soccer feed for a finished match (`/scores/historical/{fixtureId}` — 1,000+ records: goals, scorers via lineups, cards, VAR, penalties) plus real in-running odds (`/odds/snapshot?asOf=…`), maps them onto game events, and replays at demo speed. Verified end-to-end: England 3–2 Mexico with Bellingham ×2, Quiñones, Kane, and Jiménez — the actual result.
+`txline-history` is the hackathon demo mode: the host chooses a curated fixture before creating the session. The server stores that fixture in `SessionState`, pulls its recorded soccer feed (`/scores/historical/{fixtureId}`), samples its real in-running odds, and replays it at demo speed. Team identity is represented internally as `HOME` and `AWAY`, so scoring and UI are not tied to specific countries. The curated catalogue lives in `DEMO_FIXTURES` in `packages/shared/src/index.ts`; an API-driven live catalogue can replace it without changing the session model.
 
-Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), `TXLINE_P1_TEAM` / `TXLINE_P2_TEAM` (map TxLINE participant slots to app teams, default ENG/MEX).
+Env knobs: `TXLINE_NETWORK` (mainnet | devnet), `TXLINE_SERVICE_LEVEL` (12 = real-time free tier, 1 = 60s delayed), and `MS_PER_MINUTE` (historical replay speed).
 
 **Before demoing live:** the docs don't publish full stream payload examples, so `txline/feed.ts` parses defensively (goals are detected from documented stat keys 1/2 = participant total goals). Run the probe during any live match and tighten the field mapping — especially the next-goal odds market, which is currently logged but not yet mapped (`onOdds` TODO).
 

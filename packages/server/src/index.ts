@@ -48,8 +48,9 @@ const store = new SessionStore((session: Session) => {
 });
 
 io.on("connection", (socket) => {
-  socket.on("session:create", ({ name, wallet }, cb) => {
-    const session = store.create();
+  socket.on("session:create", ({ name, wallet, fixtureId }, cb) => {
+    const session = store.create(fixtureId);
+    if (!session) return cb({ ok: false, error: "Choose one of the available matches." });
     const result = session.join(name, wallet);
     if (!result.ok) return cb(result);
     socket.data.code = session.code;

@@ -1,13 +1,45 @@
 // Shared contract between the game server and the Next.js client.
 
-export type TeamCode = "ENG" | "MEX";
+/** Stable prediction slots; display names come from the session fixture. */
+export type TeamCode = "HOME" | "AWAY";
 
-export const TEAMS: Record<TeamCode, { code: TeamCode; name: string; flag: string }> = {
-  ENG: { code: "ENG", name: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
-  MEX: { code: "MEX", name: "Mexico", flag: "🇲🇽" },
-};
+export const TEAM_CODES: TeamCode[] = ["HOME", "AWAY"];
 
-export const TEAM_CODES: TeamCode[] = ["ENG", "MEX"];
+export interface FixtureTeam {
+  id: number;
+  name: string;
+  flag: string;
+}
+
+export interface GameFixture {
+  id: number;
+  home: FixtureTeam;
+  away: FixtureTeam;
+}
+
+/** Curated, verified TxLINE replays for the hackathon selector. */
+export const DEMO_FIXTURES: GameFixture[] = [
+  {
+    id: 18192996,
+    home: { id: 2545, name: "Mexico", flag: "🇲🇽" },
+    away: { id: 1888, name: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+  },
+  {
+    id: 18193785,
+    home: { id: 3220, name: "USA", flag: "🇺🇸" },
+    away: { id: 1575, name: "Belgium", flag: "🇧🇪" },
+  },
+  {
+    id: 18198205,
+    home: { id: 2802, name: "Portugal", flag: "🇵🇹" },
+    away: { id: 3021, name: "Spain", flag: "🇪🇸" },
+  },
+  {
+    id: 18209181,
+    home: { id: 1999, name: "France", flag: "🇫🇷" },
+    away: { id: 2530, name: "Morocco", flag: "🇲🇦" },
+  },
+];
 
 /** 0.1 SOL per player on devnet. The escrow stores this value on initialization. */
 export const ENTRY_LAMPORTS = 100_000_000;
@@ -77,6 +109,7 @@ export interface QuestionResult {
 
 export interface SessionState {
   code: string;
+  fixture: GameFixture;
   /** Unique 32-byte hex identifier used as the escrow PDA seed. */
   escrowId: string;
   status: SessionStatus;
@@ -110,7 +143,7 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   "session:create": (
-    payload: { name: string; wallet: string },
+    payload: { name: string; wallet: string; fixtureId: number },
     cb: (ack: JoinAck) => void,
   ) => void;
   "session:join": (

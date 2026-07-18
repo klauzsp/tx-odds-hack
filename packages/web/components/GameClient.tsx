@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { QuestionType, SessionState, TeamCode } from "@nextgoal/shared";
-import { ENTRY_LAMPORTS, TEAMS, TEAM_CODES } from "@nextgoal/shared";
+import { DEMO_FIXTURES, ENTRY_LAMPORTS, TEAM_CODES } from "@nextgoal/shared";
 import { useAnchorWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   ensureEscrowDeposit,
@@ -24,6 +24,7 @@ export default function GameClient() {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [codeInput, setCodeInput] = useState("");
+  const [fixtureId, setFixtureId] = useState(DEMO_FIXTURES[0].id);
   const [error, setError] = useState<string | null>(null);
   const [escrow, setEscrow] = useState<EscrowSnapshot | null>(null);
   const [chainBusy, setChainBusy] = useState(false);
@@ -91,7 +92,7 @@ export default function GameClient() {
     if (!wallet) return setError("Connect your Phantom wallet first.");
     setError(null);
     const walletAddress = wallet.publicKey.toBase58();
-    getSocket().emit("session:create", { name, wallet: walletAddress }, (ack) => {
+    getSocket().emit("session:create", { name, wallet: walletAddress, fixtureId }, (ack) => {
       if (!ack.ok) return setError(ack.error);
       joinedRef.current = { code: ack.code, name, wallet: walletAddress };
       setPlayerId(ack.playerId);
@@ -139,6 +140,8 @@ export default function GameClient() {
         setName={setName}
         codeInput={codeInput}
         setCodeInput={setCodeInput}
+        fixtureId={fixtureId}
+        setFixtureId={setFixtureId}
         onCreate={create}
         onJoin={join}
         walletConnected={Boolean(wallet)}
@@ -178,6 +181,8 @@ function HomeScreen(props: {
   setName: (v: string) => void;
   codeInput: string;
   setCodeInput: (v: string) => void;
+  fixtureId: number;
+  setFixtureId: (v: number) => void;
   onCreate: () => void;
   onJoin: () => void;
   walletConnected: boolean;
@@ -198,6 +203,20 @@ function HomeScreen(props: {
       </div>
 
       <div className="card">
+        <label className="field">
+          <span>Choose a match replay</span>
+          <select
+            value={props.fixtureId}
+            onChange={(event) => props.setFixtureId(Number(event.target.value))}
+          >
+            {DEMO_FIXTURES.map((fixture) => (
+              <option key={fixture.id} value={fixture.id}>
+                {fixture.home.flag} {fixture.home.name} vs {fixture.away.name} {fixture.away.flag}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="field">
           <span>Your name</span>
           <input
@@ -290,9 +309,13 @@ function LobbyScreen(props: {
         </div>
 
         <div className="fixtureBanner">
-          <span>{TEAMS.ENG.flag} England</span>
+          <span>
+            {state.fixture.home.flag} {state.fixture.home.name}
+          </span>
           <span className="muted">vs</span>
-          <span>Mexico {TEAMS.MEX.flag}</span>
+          <span>
+            {state.fixture.away.name} {state.fixture.away.flag}
+          </span>
         </div>
 
         <div className="escrowPanel">
@@ -346,25 +369,27 @@ function MatchScreen(props: {
   const myPick = question ? (state.predictions[question.id]?.[playerId] ?? null) : null;
   const playerName = (id: string) =>
     state.players.find((p) => p.id === id)?.name ?? "Unknown";
+  const team = (code: TeamCode) =>
+    code === "HOME" ? state.fixture.home : state.fixture.away;
 
   return (
     <main className="shell wide">
       <header className="scoreboard">
         <div className="teamSide">
-          <span className="teamFlag">{TEAMS.ENG.flag}</span>
-          <span className="teamName">England</span>
+          <span className="teamFlag">{state.fixture.home.flag}</span>
+          <span className="teamName">{state.fixture.home.name}</span>
         </div>
         <div className="scoreCenter">
           <span className="scoreLine">
-            {state.score.ENG} – {state.score.MEX}
+            {state.score.HOME} – {state.score.AWAY}
           </span>
           <span className={`clock ${state.status === "finished" ? "ft" : ""}`}>
             {state.status === "finished" ? "FULL TIME" : `${state.minute}'`}
           </span>
         </div>
         <div className="teamSide right">
-          <span className="teamName">Mexico</span>
-          <span className="teamFlag">{TEAMS.MEX.flag}</span>
+          <span className="teamName">{state.fixture.away.name}</span>
+          <span className="teamFlag">{state.fixture.away.flag}</span>
         </div>
       </header>
 
@@ -397,8 +422,8 @@ function MatchScreen(props: {
                       onClick={() => props.onPredict(code)}
                       disabled={myPick !== null}
                     >
-                      <span className="answerFlag">{TEAMS[code].flag}</span>
-                      <span className="answerName">{TEAMS[code].name}</span>
+                      <span className="answerFlag">{team(code).flag}</span>
+                      <span className="answerName">{team(code).name}</span>
                       <span className="answerOdds">
                         {question.type === "NEXT_GOAL"
                           ? `pays ${Math.round(100 * state.odds[code])} pts`
@@ -435,7 +460,7 @@ function MatchScreen(props: {
                 return (
                   <span key={q.id} className="pendingChip">
                     {QUESTION_EMOJI[q.type]} {q.text.replace("?", "")} —{" "}
-                    {pick ? `you: ${TEAMS[pick].name}` : "no pick"} · awaiting…
+                    {pick ? `you: ${team(pick).name}` : "no pick"} · awaiting…
                   </span>
                 );
               })}
@@ -455,7 +480,7 @@ function MatchScreen(props: {
                       {state.lastResult.entries.map((entry) => (
                         <li key={entry.playerId}>
                           <span>
-                            {playerName(entry.playerId)} picked {TEAMS[entry.team].name}
+                            {playerName(entry.playerId)} picked {team(entry.team).name}
                           </span>
                           <span className={entry.points > 0 ? "gain" : "muted"}>
                             {entry.points > 0 ? `+${entry.points} pts` : "+0"}
@@ -505,10 +530,10 @@ function MatchScreen(props: {
                     {event.kind === "HALF_TIME" && "Half-time."}
                     {event.kind === "FULL_TIME" && "Full-time."}
                     {event.kind === "GOAL" &&
-                      `GOAL! ${event.scorer ? `${event.scorer} (${TEAMS[event.team].name})` : TEAMS[event.team].name}`}
+                      `GOAL! ${event.scorer ? `${event.scorer} (${team(event.team).name})` : team(event.team).name}`}
                     {event.kind === "CARD" &&
-                      `${event.card === "red" ? "🟥" : "🟨"} ${event.player || TEAMS[event.team].name}${event.player ? ` (${TEAMS[event.team].name})` : ""}`}
-                    {event.kind === "CORNER" && `Corner — ${TEAMS[event.team].name}`}
+                      `${event.card === "red" ? "🟥" : "🟨"} ${event.player || team(event.team).name}${event.player ? ` (${team(event.team).name})` : ""}`}
+                    {event.kind === "CORNER" && `Corner — ${team(event.team).name}`}
                     {event.kind === "COMMENTARY" && event.text}
                   </span>
                 </li>

@@ -1,4 +1,4 @@
-import type { FeedEvent, NextGoalOdds, TeamCode } from "@nextgoal/shared";
+import type { FeedEvent, GameFixture, NextGoalOdds, TeamCode } from "@nextgoal/shared";
 import type { FeedHandlers, MatchFeed } from "../feed";
 import { SimulatedFeed } from "../simulatedFeed";
 import { MS_PER_MINUTE } from "../fixture";
@@ -21,13 +21,13 @@ export class TxLineHistoricalFeed implements MatchFeed {
   private inner: SimulatedFeed | null = null;
   private stopped = false;
 
-  constructor(private readonly fixtureId: number) {}
+  constructor(private readonly fixture: GameFixture) {}
 
   start(handlers: FeedHandlers) {
     this.prepare()
       .then((events) => {
         if (this.stopped) return;
-        console.log(`[txline] replaying fixture ${this.fixtureId}: ${events.length} feed events`);
+        console.log(`[txline] replaying fixture ${this.fixture.id}: ${events.length} feed events`);
         this.inner = new SimulatedFeed(events, MS_PER_MINUTE);
         this.inner.start(handlers);
       })
@@ -41,12 +41,12 @@ export class TxLineHistoricalFeed implements MatchFeed {
 
   private async prepare(): Promise<FeedEvent[]> {
     const auth = await ensureAuth();
-    const records = await fetchHistoricalRecords(auth, this.fixtureId);
+    const records = await fetchHistoricalRecords(auth, this.fixture.id);
     if (records.length === 0) {
-      throw new Error(`No historical data for fixture ${this.fixtureId}`);
+      throw new Error(`No historical data for fixture ${this.fixture.id}`);
     }
 
-    const teams = resolveTeams(records);
+    const teams: ParticipantTeams = { p1: "HOME", p2: "AWAY" };
     const players = buildPlayerNames(records);
     const events: FeedEvent[] = [];
 
@@ -124,7 +124,7 @@ export class TxLineHistoricalFeed implements MatchFeed {
           events.push({
             kind: "COMMENTARY",
             minute,
-            text: `Penalty to ${sideName(r, teams)}!`,
+            text: `Penalty to ${sideName(r, teams, this.fixture)}!`,
           });
           break;
         }
@@ -139,7 +139,7 @@ export class TxLineHistoricalFeed implements MatchFeed {
             events.push({
               kind: "COMMENTARY",
               minute,
-              text: `${sideName(r, teams)} ${how}.`,
+              text: `${sideName(r, teams, this.fixture)} ${how}.`,
             });
           }
           break;
@@ -175,7 +175,7 @@ export class TxLineHistoricalFeed implements MatchFeed {
         try {
           const snapshot = await apiGet<Rec[]>(
             auth,
-            `/odds/snapshot/${this.fixtureId}?asOf=${asOf}`,
+            `/odds/snapshot/${this.fixture.id}?asOf=${asOf}`,
           );
           for (const record of snapshot ?? []) {
             const odds = mapNextGoalOdds(record, teams);
@@ -211,31 +211,6 @@ async function fetchHistoricalRecords(auth: TxLineAuth, fixtureId: number): Prom
       }
     })
     .filter((r): r is Rec => r !== null);
-}
-
-/** Map participant slots to app teams by lineup team names, falling back to env. */
-function resolveTeams(records: Rec[]): ParticipantTeams {
-  const fallback: ParticipantTeams = {
-    p1: (process.env.TXLINE_P1_TEAM ?? "ENG") as TeamCode,
-    p2: (process.env.TXLINE_P2_TEAM ?? "MEX") as TeamCode,
-  };
-  const lineups = records.find((r) => r.Action === "lineups" && Array.isArray(r.Lineups));
-  if (!lineups) return fallback;
-  const p1Id = lineups.Participant1Id;
-  const teams = { ...fallback };
-  for (const side of lineups.Lineups as Rec[]) {
-    const name = String(side.preferredName ?? "").toLowerCase();
-    const code: TeamCode | null = name.includes("england")
-      ? "ENG"
-      : name.includes("mexico")
-        ? "MEX"
-        : null;
-    if (!code) continue;
-    if (side.normativeId === p1Id) teams.p1 = code;
-    else teams.p2 = code;
-  }
-  if (teams.p1 === teams.p2) return fallback;
-  return teams;
 }
 
 /** playerId (normativeId) -> display name, from the lineups records. */
@@ -283,9 +258,9 @@ function flipName(name: string): string {
   return first ? `${first} ${last}` : name;
 }
 
-function sideName(record: Rec, teams: ParticipantTeams): string {
+function sideName(record: Rec, teams: ParticipantTeams, fixture: GameFixture): string {
   const team = record.Participant === 1 ? teams.p1 : teams.p2;
-  return team === "ENG" ? "England" : "Mexico";
+  return team === "HOME" ? fixture.home.name : fixture.away.name;
 }
 
 function numberOr(value: unknown, fallback: number): number {
