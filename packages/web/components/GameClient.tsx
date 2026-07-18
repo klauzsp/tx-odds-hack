@@ -859,6 +859,23 @@ function MatchScreen(props: {
         </div>
       </header>
 
+      <div className="card oddsCard matchOddsBar">
+        <div className="oddsTitleRow">
+          <p className="cardTitle">Next goal odds</p>
+          <span className="liveBadge"><i /> TXODDS LIVE</span>
+        </div>
+        <div className="oddsTicker">
+          {TEAM_CODES.map((code) => (
+            <div key={code}>
+              <span>{team(code).flag} {team(code).name}</span>
+              <strong className={oddsMovement[code] > 0 ? "oddsUp" : oddsMovement[code] < 0 ? "oddsDown" : ""}>
+                {state.odds[code].toFixed(2)}× {oddsMovement[code] > 0 ? "↑" : oddsMovement[code] < 0 ? "↓" : ""}
+              </strong>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="columns">
         <section className="mainCol">
           {state.status === "finished" ? (
@@ -976,23 +993,6 @@ function MatchScreen(props: {
         </section>
 
         <aside className="sideCol">
-          <div className="card oddsCard">
-            <div className="oddsTitleRow">
-              <p className="cardTitle">Next goal odds</p>
-              <span className="liveBadge"><i /> TXODDS LIVE</span>
-            </div>
-            <div className="oddsTicker">
-              {TEAM_CODES.map((code) => (
-                <div key={code}>
-                  <span>{team(code).flag} {team(code).name}</span>
-                  <strong className={oddsMovement[code] > 0 ? "oddsUp" : oddsMovement[code] < 0 ? "oddsDown" : ""}>
-                    {state.odds[code].toFixed(2)}× {oddsMovement[code] > 0 ? "↑" : oddsMovement[code] < 0 ? "↓" : ""}
-                  </strong>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div className="card">
             <p className="cardTitle">Scores</p>
             <ul className="scoreList">
