@@ -406,6 +406,7 @@ function HomeScreen(props: {
             !props.name.trim() ||
             !props.walletConnected ||
             props.chainBusy ||
+            selectedFixture.replayStatus === "processing" ||
             props.sessionAction !== null
           }
         >
@@ -416,12 +417,22 @@ function HomeScreen(props: {
             </span>
           ) : !props.walletConnected
             ? "Connect wallet to play"
+            : selectedFixture.replayStatus === "processing"
+              ? "Replay data being prepared"
             : selectedFixture.status === "upcoming"
               ? "Create pending session · no deposit yet"
               : "Create a session · 0.1 SOL"}
         </button>
 
-        {selectedFixture.status === "historical" && (
+        {selectedFixture.replayStatus === "processing" && (
+          <p className="muted small practiceNote">
+            This match has finished. Its TXODDS replay will be available once the
+            historical feed has been processed.
+          </p>
+        )}
+
+        {selectedFixture.status === "historical" &&
+          selectedFixture.replayStatus !== "processing" && (
           <>
             <div className="divider">or play instantly</div>
             <button
@@ -442,7 +453,7 @@ function HomeScreen(props: {
               No wallet or SOL required · no prize payout
             </p>
           </>
-        )}
+          )}
 
         <div className="divider">or join a friend</div>
 
@@ -711,6 +722,7 @@ function fixtureCountdown(fixture: GameFixture, now: number): string {
 
 function fixtureTimeStatus(fixture: GameFixture, now: number): "PAST" | "PRESENT" | "FUTURE" {
   if (fixture.status === "historical") return "PAST";
+  if (fixture.startsAt && now >= fixture.startsAt + 3 * 60 * 60 * 1_000) return "PAST";
   if (fixture.startsAt && now >= fixture.startsAt) return "PRESENT";
   return "FUTURE";
 }

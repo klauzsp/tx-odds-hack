@@ -545,7 +545,12 @@ export class SessionStore {
 
   create(fixtureId: number, mode: SessionMode): Session | null {
     const fixture = DEMO_FIXTURES.find((candidate) => candidate.id === fixtureId);
-    if (!fixture || (mode === "practice" && fixture.status !== "historical")) return null;
+    if (
+      !fixture ||
+      fixture.replayStatus === "processing" ||
+      (mode === "practice" && fixture.status !== "historical")
+    )
+      return null;
     let code: string;
     do {
       code = Array.from(

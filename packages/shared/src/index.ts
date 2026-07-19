@@ -16,6 +16,8 @@ export interface GameFixture {
   home: FixtureTeam;
   away: FixtureTeam;
   status: "historical" | "upcoming";
+  /** Set while a finished fixture is waiting for its TXODDS replay records. */
+  replayStatus?: "processing";
   startsAt?: number;
   stage?: string;
 }
@@ -48,7 +50,8 @@ export const DEMO_FIXTURES: GameFixture[] = [
   },
   {
     id: 18257865,
-    status: "upcoming",
+    status: "historical",
+    replayStatus: "processing",
     startsAt: 1_784_408_400_000,
     stage: "Third-place play-off",
     home: { id: 1999, name: "France", flag: "🇫🇷" },
