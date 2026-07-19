@@ -437,13 +437,6 @@ select:focus {
   text-shadow: 0 0 28px rgba(246, 196, 83, 0.2);
 }
 
-.sessionCodeRow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
 .inviteBlock {
   width: 100%;
   display: flex;

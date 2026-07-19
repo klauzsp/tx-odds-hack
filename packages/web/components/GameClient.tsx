@@ -546,22 +546,20 @@ function LobbyScreen(props: {
             <div className="inviteBlock">
               <InviteQr value={inviteUrl} />
               <div className="inviteDetails">
-                <div className="sessionCodeRow">
-                  <p className="sessionCode">{state.code}</p>
-                  <button
-                    className="copyCodeBtn"
-                    type="button"
-                    onClick={() => {
-                      void navigator.clipboard.writeText(inviteUrl || state.code).then(() => {
-                        setCopied(true);
-                        window.setTimeout(() => setCopied(false), 1_500);
-                      });
-                    }}
-                  >
-                    {copied ? "Copied ✓" : "Copy invite"}
-                  </button>
-                </div>
-                <p className="muted small">Scan or share the link to prefill this code</p>
+                <p className="sessionCode">{state.code}</p>
+                <p className="muted small">Your friend enters this code to join</p>
+                <button
+                  className="copyCodeBtn"
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(inviteUrl || state.code).then(() => {
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1_500);
+                    });
+                  }}
+                >
+                  {copied ? "Link copied ✓" : "🔗 Copy invite link instead"}
+                </button>
               </div>
             </div>
           </>
