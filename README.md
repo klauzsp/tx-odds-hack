@@ -147,3 +147,7 @@ The selected fixture routes to the correct feed automatically. Replay speed can 
 pnpm typecheck
 pnpm --filter @matchpot/web build
 ```
+
+## Diagrams
+
+![MatchPot diagrams: the escrow program, the session flow between two friends, TXODDS and the Solana program, and the odds-weighted point system](diagrams.png)
